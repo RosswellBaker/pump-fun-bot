@@ -8,8 +8,12 @@ import json
 import os
 from datetime import datetime
 from time import monotonic
+import time
+import os
+from dotenv import load_dotenv
 
-import uvloop
+load_dotenv()
+
 from solders.pubkey import Pubkey
 
 from cleanup.modes import (
@@ -22,6 +26,7 @@ from core.curve import BondingCurveManager
 from core.priority_fee.manager import PriorityFeeManager
 from core.pubkeys import PumpAddresses
 from core.wallet import Wallet
+from spl.token.instructions import get_associated_token_address
 from monitoring.block_listener import BlockListener
 from monitoring.geyser_listener import GeyserListener
 from monitoring.logs_listener import LogsListener
@@ -29,8 +34,6 @@ from trading.base import TokenInfo, TradeResult
 from trading.buyer import TokenBuyer
 from trading.seller import TokenSeller
 from utils.logger import get_logger
-
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = get_logger(__name__)
 
@@ -78,6 +81,7 @@ class PumpTrader:
         bro_address: str | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
+        top_holder_count: int = 10,  # Number of top holders to check for anti-whale filter
     ):
         """Initialize the pump trader.
         Args:
@@ -194,6 +198,7 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
+        self.top_holder_count = top_holder_count
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
@@ -390,6 +395,68 @@ class PumpTrader:
             token_info: Token information
         """
         try:
+            # --- PRE-BUY FILTER: cap user mint at 4%, bundled wallets at 5% ---
+            TOTAL_SUPPLY_RAW = int(os.getenv("PUMP_FUN_TOTAL_SUPPLY_RAW", 1_000_000_000 * 10**6))
+
+            holders, supply = await self.solana_client.get_token_largest_accounts_and_supply(
+                token_info.mint
+            )
+            if supply <= 0:
+                logger.warning(f"Skipping {token_info.symbol} — zero supply.")
+                return
+
+            user_addr  = str(token_info.user)
+            curve_addr = str(token_info.associated_bonding_curve)
+            vault_addr = str(token_info.creator_vault)
+
+            user_raw     = 0
+            bundle_raw   = 0
+            bundle_count = 0
+
+            for bal in holders:
+                addr = bal["address"]
+                amt  = int(bal["amount"])
+
+                if addr == user_addr:
+                    user_raw += amt
+                elif addr in (curve_addr, vault_addr):
+                    # ignore the bonding curve & the internal vault
+                    continue
+                else:
+                    bundle_raw   += amt
+                    bundle_count += 1
+
+            user_pct   = user_raw   / TOTAL_SUPPLY_RAW * 100
+            bundle_pct = bundle_raw / TOTAL_SUPPLY_RAW * 100
+
+            logger.info(
+                f"{token_info.symbol} pre-buy scan: "
+                f"user {user_pct:.2f}% | bundles {bundle_pct:.2f}% "
+                f"across {bundle_count} wallet(s)"
+            )
+
+            USER_MAX_PCT   = float(os.getenv("USER_MAX_PCT",   4.0))
+            BUNDLE_MAX_PCT = float(os.getenv("BUNDLE_MAX_PCT", 5.0))
+
+            if user_pct > USER_MAX_PCT:
+                logger.warning(
+                    f"⚠️ Skipping {token_info.symbol}: "
+                    f"user mint {user_pct:.2f}% > {USER_MAX_PCT}%"
+                )
+                return
+
+            if bundle_pct > BUNDLE_MAX_PCT:
+                logger.warning(
+                    f"⚠️ Skipping {token_info.symbol}: "
+                    f"bundles {bundle_pct:.2f}% > {BUNDLE_MAX_PCT}%"
+                )
+                return
+
+            logger.info(f"✅ {token_info.symbol} passed pre-buy filters.")
+
+            
+            # -----------------------------------------------------------
+
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
             if not self.extreme_fast_mode:
                 # Save token info to file
@@ -474,7 +541,6 @@ class PumpTrader:
                 )
         else:
             logger.info("Marry mode enabled. Skipping sell operation.")
-
     async def _handle_failed_buy(
         self, token_info: TokenInfo, buy_result: TradeResult
     ) -> None:
