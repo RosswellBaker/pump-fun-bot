@@ -19,7 +19,7 @@ dependencies = [
     "grpcio-tools>=1.71.0",
     "protobuf>=6.30.0",
     "pyyaml>=6.0.2",
-] 
+    ] 
 
 [project.scripts]
 pump_bot = "bot_runner:main"

@@ -4,9 +4,15 @@ import multiprocessing
 from datetime import datetime
 from pathlib import Path
 
-import uvloop
+import sys
 
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+# Use uvloop only if available and not on Windows
+if sys.platform != "win32":
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        pass
 
 from config_loader import load_bot_config, print_config_summary
 from trading.trader import PumpTrader
