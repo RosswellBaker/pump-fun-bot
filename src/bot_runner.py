@@ -118,6 +118,11 @@ def run_all_bots():
     processes = []
     skipped_bots = 0
     
+    def run_bot_process(config_path):
+    import asyncio
+    asyncio.run(start_bot(config_path))
+
+    
     for file in bot_files:
         try:
             cfg = load_bot_config(str(file))
@@ -132,7 +137,8 @@ def run_all_bots():
             if cfg.get("separate_process", False):
                 logging.info(f"Starting bot '{bot_name}' in separate process")
                 p = multiprocessing.Process(
-                    target=lambda path=str(file): asyncio.run(start_bot(path)), 
+                    target=run_bot_process,
+                    args=(str(file),),
                     name=f"bot-{bot_name}"
                 )
                 p.start()
