@@ -394,42 +394,41 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-            tx_sig = token_info.signature
-            tx = await self.solana_client.get_transaction(tx_sig, commitment="confirmed")
+            # Fetch full transaction using signature
+            tx = await self.solana_client.get_transaction(
+                token_info.signature, commitment="confirmed"
+            )
     
-            # --- PRE-BUY FILTER: Anchor CPI log parsing ---
             balances = tx["meta"].get("postTokenBalances", [])
-            creator = token_info.creator
-            curve = token_info.associatedBondingCurve
-            
+            if not balances:
+                logger.warning(f"{token_info.symbol}: No balances found. Skipping.")
+                return
+    
             from decimal import Decimal
             import os
-            
+    
             CREATOR_MAX = Decimal(os.getenv("CREATOR_MAX_PCT", "4.0"))
-            BUNDLE_MIN = Decimal(os.getenv("BUNDLE_MAX_PCT", "5.0"))
-            
-            def pct(part: int, total: int) -> Decimal:
-                return (Decimal(part) / Decimal(total)) * Decimal(100)
-            
+            BUNDLE_MAX = Decimal(os.getenv("BUNDLE_MAX_PCT", "5.0"))
+    
+            creator = str(token_info.creator)
+            curve = str(token_info.associated_bonding_curve)
+    
             total = creator_amt = bundle_amt = 0
             for bal in balances:
                 amt = int(bal["uiTokenAmount"]["amount"])
                 total += amt
                 owner = bal.get("owner")
-                if owner == str(creator):
+                if owner == creator:
                     creator_amt += amt
-                elif owner != str(curve):
+                elif owner != curve:
                     bundle_amt += amt
-            
+    
             if total > 0:
-                c_pct = pct(creator_amt, total)
-                b_pct = pct(bundle_amt, total)
-                logger.info(f"[Filter] {token_info.symbol}: creator={c_pct:.2f}%, bundle={b_pct:.2f}%")
-                if c_pct > CREATOR_MAX and b_pct < BUNDLE_MIN:
-                    logger.warning(
-                        f" SKIP {token_info.symbol}: creator {c_pct:.2f}% > {CREATOR_MAX}%, bundle only {b_pct:.2f}% < {BUNDLE_MIN}%"
-                    )
-                    return
+                c_pct = (Decimal(creator_amt) / Decimal(total)) * 100
+                b_pct = (Decimal(bundle_amt) / Decimal(total)) * 100
+    
+                if c_pct > CREATOR_MAX and b_pct < BUNDLE_MAX:
+                    return  # Token fails filter — skip
 
             # -----------------------------------------------------------
 
