@@ -391,7 +391,15 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-            # Fetch transaction
+            # Wait for bonding curve to stabilize (unless in extreme fast mode)
+            if not self.extreme_fast_mode:
+                # Save token info to file
+                # await self._save_token_info(token_info)
+                logger.info(
+                    f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
+                )
+                await asyncio.sleep(self.wait_time_after_creation)
+            
             tx = await self.solana_client.get_transaction(token_info.signature, commitment="confirmed")
             if not tx:
                 return  # fail silently if tx fetch fails
@@ -407,17 +415,6 @@ class PumpTrader:
                     if match:
                         if int(match.group("amt")) > MAX_CREATOR_UNITS:
                             return  # silently skip this token
-
-        # -----------------------------------------------------------
-    
-            # Wait for bonding curve to stabilize (unless in extreme fast mode)
-            if not self.extreme_fast_mode:
-                # Save token info to file
-                # await self._save_token_info(token_info)
-                logger.info(
-                    f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
-                )
-                await asyncio.sleep(self.wait_time_after_creation)
             
             # -----------------------------------------------------------
             
