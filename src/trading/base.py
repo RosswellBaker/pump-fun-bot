@@ -46,7 +46,7 @@ class TokenInfo:
             user=Pubkey.from_string(data["user"]),
             creator=Pubkey.from_string(data["creator"]),
             creator_vault=Pubkey.from_string(data["creator_vault"]),
-            signature=data["signature"],
+            signature=data["signature"]
         )
 
     def to_dict(self) -> dict[str, str]:
