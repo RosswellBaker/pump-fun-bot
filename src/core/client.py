@@ -53,7 +53,7 @@ class SolanaClient:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "getTokenSupply",
-                "params": [mint]
+                "params": [str(mint)]
             }
             resp_supply = await self.post_rpc(body_supply)
             supply = 0
