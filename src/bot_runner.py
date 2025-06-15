@@ -6,14 +6,6 @@ from pathlib import Path
 
 import sys
 
-# Use uvloop only if available and not on Windows
-if sys.platform != "win32":
-    try:
-        import uvloop
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    except ImportError:
-        pass
-
 from config_loader import load_bot_config, print_config_summary
 from trading.trader import PumpTrader
 from utils.logger import setup_file_logging
@@ -118,7 +110,7 @@ def run_all_bots():
     processes = []
     skipped_bots = 0
     
-    def run_bot_process(config_path):
+def run_bot_process(config_path):
     import asyncio
     asyncio.run(start_bot(config_path))
 

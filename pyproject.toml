@@ -19,7 +19,12 @@ dependencies = [
     "grpcio-tools>=1.71.0",
     "protobuf>=6.30.0",
     "pyyaml>=6.0.2",
-    ] 
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.10.0"
+]
 
 [project.scripts]
 pump_bot = "bot_runner:main"
@@ -57,6 +62,21 @@ exclude = [
 line-length = 88
 indent-width = 4
 target-version = "py311"
+
+select = [
+    "E", "F", "I", "UP", "N", "B", "A", "C4", "T10", "ARG", "PTH",
+    "ANN",  # type annotations
+    "S",    # security best practices
+    "BLE",  # blind except statements
+    "FBT",  # boolean trap parameters
+    "C90",  # complexity metrics
+    "TRY",  # exception handling best practices
+    "SLF",  # private member access
+    "RUF",  # Ruff-specific rules
+    "ERA",  # eradicate commented-out code
+    "PL",   # pylint conventions
+]
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
