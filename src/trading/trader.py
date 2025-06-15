@@ -386,7 +386,7 @@ class PumpTrader:
                 self.token_queue.task_done()
     async def _handle_token(self, token_info: TokenInfo) -> None:
         """Handle a new token creation event.
-
+    
         Args:
             token_info: Token information
         """
@@ -399,22 +399,20 @@ class PumpTrader:
                     f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
                 )
                 await asyncio.sleep(self.wait_time_after_creation)
-            
-            tx = await self.solana_client.get_transaction(token_info.signature, commitment="confirmed")
-            if not tx:
-                return  # fail silently if tx fetch fails
-
+    
+            tx = await self._client.get_transaction(token_info.signature)
             creator = str(token_info.creator)
             MAX_CREATOR_UNITS = 40_000_000_000_000  # 40M tokens in micro-units
-
+    
             logs = tx.get("meta", {}).get("logMessages", [])
-
+    
             for log in logs:
                 if "Instruction: Buy" in log and f"user: {creator}" in log and "tokenAmount:" in log:
                     match = re.search(r'tokenAmount:\s*"?(?P<amt>\d+)', log)
                     if match:
                         if int(match.group("amt")) > MAX_CREATOR_UNITS:
-                            return  # silently skip this token
+                            logger.info(f"Token skipped — creator bought too much: {int(match.group('amt'))}")
+                            return  # skip this token silently
             
             # -----------------------------------------------------------
             
