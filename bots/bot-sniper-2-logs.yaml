@@ -35,24 +35,24 @@ trade:
 priority_fees:
   enable_dynamic: false # Use latest transactions to estimate required fee (getRecentPrioritizationFees)
   enable_fixed: true # Use fixed amount below
-  fixed_amount: 300_000 # Base fee in microlamports
-  extra_percentage: 0.0 # Percentage increase on riority fee regardless of the calculation method (0.1 = 10%)
-  hard_cap: 400_000 # Maximum allowable fee in microlamports to prevent excessive spending
+  fixed_amount: 500_000 # Base fee in microlamports
+  extra_percentage: 0.0 # Percentage increase on priority fee regardless of the calculation method (0.1 = 10%)
+  hard_cap: 600_000 # Maximum allowable fee in microlamports to prevent excessive spending
 
 # Filters for token selection
 filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.005 # Maximum token age in seconds for processing
+  max_token_age: 0.002 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
 
 # Retry and timeout settings
 retries:
   max_attempts: 2 # Number of attempts for transaction submission
-  wait_after_creation: 10 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
-  wait_after_buy: 7 # holding period after buy transaction
+  wait_after_creation: 0 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_buy: 25 # holding period after buy transaction
   wait_before_new_token: 5 # pause between token trades
 
 # Token and account management
@@ -68,4 +68,4 @@ cleanup:
 
 # Node provider configuration (not implemented)
 node:
-  max_rps: 6 # Maximum requests per second
+  max_rps: 7 # Maximum requests per second
