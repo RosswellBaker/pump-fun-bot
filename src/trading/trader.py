@@ -389,69 +389,47 @@ class PumpTrader:
         self, token_info: TokenInfo
     ) -> None:
         """Handle a new token creation event.
-
+    
         Args:
             token_info: Token information
         """
         try:
-            # --- PRE-BUY FILTER: Anchor CPI log parsing ---
-
-            # Step 1: fetch the full mint transaction
             tx_sig = token_info.tx_signature
             tx = await self.solana_client.get_transaction(tx_sig, commitment="confirmed")
-
-            # Step 2: locate & parse the Anchor CPI JSON block
-            cpi_block = None
-            for log in tx["meta"]["logMessages"]:
-                if log.startswith("Program log: {"):
-                    try:
-                        cpi_block = json.loads(log[len("Program log: "):])
-                        break
-                    except json.JSONDecodeError:
-                        continue
-
-            if not cpi_block:
-                logger.warning(f"Skipping {token_info.symbol}: unable to parse Anchor CPI log.")
-                return
-
-            # Step 3: extract raw values
-            user_raw     = int(cpi_block["userRaw"])
-            bundles      = cpi_block.get("bundledWallets", [])
-            bundle_raw   = sum(int(w["amount"]) for w in bundles)
-            bundle_count = len(bundles)
-
-            # Step 4: compute percentages
-            TOTAL_SUPPLY       = float(os.getenv("PUMP_FUN_TOTAL_SUPPLY", 1_000_000_000))
-            user_pct, bundle_pct = (
-                user_raw   / TOTAL_SUPPLY * 100,
-                bundle_raw / TOTAL_SUPPLY * 100,
-            )
-
-            logger.info(
-                f"{token_info.symbol} pre-buy via CPI: "
-                f"user {user_pct:.2f}% | bundles {bundle_pct:.2f}% "
-                f"across {bundle_count} wallet(s)"
-            )
-
-            # Step 5: apply thresholds from .env
-            CREATOR_MAX_PCT = float(os.getenv("CREATOR_MAX_PCT", 4.0))
-            BUNDLE_MAX_PCT  = float(os.getenv("BUNDLE_MAX_PCT", 5.0))
-
-            if user_pct > CREATOR_MAX_PCT:
-                logger.warning(
-                    f" Skipping {token_info.symbol}: "
-                    f"minter {user_pct:.2f}% > {CREATOR_MAX_PCT}%"
-                )
-                return
-
-            if bundle_pct > BUNDLE_MAX_PCT:
-                logger.warning(
-                    f" Skipping {token_info.symbol}: "
-                    f"bundled wallets {bundle_pct:.2f}% > {BUNDLE_MAX_PCT}%"
-                )
-                return
-
-            logger.info(f" {token_info.symbol} passed CPI-based filters.")
+    
+            # --- PRE-BUY FILTER: Anchor CPI log parsing ---
+            balances = tx["meta"].get("postTokenBalances", [])
+            creator = token_info.creator
+            curve = token_info.associatedBondingCurve
+            
+            from decimal import Decimal
+            import os
+            
+            CREATOR_MAX = Decimal(os.getenv("CREATOR_MAX_PCT", "4.0"))
+            BUNDLE_MIN = Decimal(os.getenv("BUNDLE_MIN_PCT", "5.0"))
+            
+            def pct(part: int, total: int) -> Decimal:
+                return (Decimal(part) / Decimal(total)) * Decimal(100)
+            
+            total = creator_amt = bundle_amt = 0
+            for bal in balances:
+                amt = int(bal["uiTokenAmount"]["amount"])
+                total += amt
+                owner = bal.get("owner")
+                if owner == str(creator):
+                    creator_amt += amt
+                elif owner != str(curve):
+                    bundle_amt += amt
+            
+            if total > 0:
+                c_pct = pct(creator_amt, total)
+                b_pct = pct(bundle_amt, total)
+                logger.info(f"[Filter] {token_info.symbol}: creator={c_pct:.2f}%, bundle={b_pct:.2f}%")
+                if c_pct > CREATOR_MAX and b_pct < BUNDLE_MIN:
+                    logger.warning(
+                        f" SKIP {token_info.symbol}: creator {c_pct:.2f}% > {CREATOR_MAX}%, bundle only {b_pct:.2f}% < {BUNDLE_MIN}%"
+                    )
+                    return
 
             # -----------------------------------------------------------
 
