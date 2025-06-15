@@ -406,7 +406,7 @@ class PumpTrader:
             import os
             
             CREATOR_MAX = Decimal(os.getenv("CREATOR_MAX_PCT", "4.0"))
-            BUNDLE_MIN = Decimal(os.getenv("BUNDLE_MIN_PCT", "5.0"))
+            BUNDLE_MIN = Decimal(os.getenv("BUNDLE_MAX_PCT", "5.0"))
             
             def pct(part: int, total: int) -> Decimal:
                 return (Decimal(part) / Decimal(total)) * Decimal(100)
