@@ -67,7 +67,7 @@ class PumpTrader:
         wait_time_after_creation: int = 15, # here and further - seconds
         wait_time_after_buy: int = 15,
         wait_time_before_new_token: int = 15,
-        max_token_age: int | float = 0.001,
+        max_token_age: int | float = 0.5,
         token_wait_timeout: int = 30,
         
         # Cleanup settings
