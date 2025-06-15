@@ -402,7 +402,7 @@ class PumpTrader:
     
             tx = await self._client.get_transaction(token_info.signature)
             creator = str(token_info.creator)
-            MAX_CREATOR_UNITS = 40_000_000_000_000  # 40M tokens in micro-units
+            MAX_CREATOR_UNITS = 40000000000000  # 40M tokens in micro-units
     
             logs = tx.get("meta", {}).get("logMessages", [])
     
