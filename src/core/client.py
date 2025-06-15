@@ -37,7 +37,7 @@ class SolanaClient:
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "getTokenLargestAccounts",
-                "params": [mint]
+                "params": [str(mint)]
             }
             resp = await self.post_rpc(body)
             holders = []
