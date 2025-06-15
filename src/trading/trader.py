@@ -394,7 +394,7 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-            tx_sig = token_info.tx_signature
+            tx_sig = token_info.signature
             tx = await self.solana_client.get_transaction(tx_sig, commitment="confirmed")
     
             # --- PRE-BUY FILTER: Anchor CPI log parsing ---
