@@ -20,7 +20,7 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.1 # amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.05 # amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.25 # Maximum acceptable price deviation (0.3 = 30%)
   sell_slippage: 0.25
 
@@ -28,7 +28,6 @@ trade:
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
   extreme_fast_mode: true
-  extreme_fast_token_amount: 2000000 # Amount of tokens to buy
 
 # Priority fee configuration
 # Manage transaction speed and cost on the Solana network.
