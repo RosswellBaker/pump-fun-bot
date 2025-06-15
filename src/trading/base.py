@@ -18,6 +18,7 @@ class TokenInfo:
     name: str
     symbol: str
     uri: str
+    signature: str
     mint: Pubkey
     bonding_curve: Pubkey
     associated_bonding_curve: Pubkey
