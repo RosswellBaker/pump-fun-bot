@@ -26,42 +26,6 @@ logger = get_logger(__name__)
 class SolanaClient:
     """Abstraction for Solana RPC client operations."""
 
-    async def get_token_largest_accounts_and_supply(self, mint: str):
-            """
-            Returns a tuple (holders, supply) for the given mint address.
-            holders: list of dicts with 'address' and 'amount'
-            supply: int (total supply)
-            """
-            # Get largest accounts
-            body = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenLargestAccounts",
-                "params": [str(mint)]
-            }
-            resp = await self.post_rpc(body)
-            holders = []
-            if resp and "result" in resp and "value" in resp["result"]:
-                for acc in resp["result"]["value"]:
-                    holders.append({
-                        "address": acc["address"],
-                        "amount": int(acc["amount"])
-                    })
-
-            # Get supply
-            body_supply = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenSupply",
-                "params": [str(mint)]
-            }
-            resp_supply = await self.post_rpc(body_supply)
-            supply = 0
-            if resp_supply and "result" in resp_supply and "value" in resp_supply["result"]:
-                supply = int(resp_supply["result"]["value"]["amount"])
-
-            return holders, supply
-
     def __init__(self, rpc_endpoint: str):
         """Initialize Solana client with RPC endpoint.
 
