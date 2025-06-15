@@ -36,45 +36,6 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-async def passes_simple_creator_and_user_filter(token_info, holders, supply):
-    CREATOR_MAX_PCT = float(os.getenv("CREATOR_MAX_PCT", 4.0))
-    creator_addr = str(token_info.creator)
-    curve_addr = str(token_info.associated_bonding_curve)
-    vault_addr = str(token_info.creator_vault)
-
-    if not holders or not supply or supply <= 0:
-        logger.warning(f"Skipping {getattr(token_info, 'symbol', 'UNKNOWN')} — missing holders or supply.")
-        return False
-
-    # Track max user wallet holding
-    max_user_pct = 0.0
-    creator_pct = 0.0
-
-    for bal in holders:
-        addr = bal.get("address")
-        amt = int(bal.get("amount", 0))
-        pct = (amt / supply) * 100
-
-        if addr == creator_addr:
-            creator_pct = pct
-        elif addr not in (curve_addr, vault_addr):
-            if pct > max_user_pct:
-                max_user_pct = pct
-
-    logger.info(
-        f"{getattr(token_info, 'symbol', 'UNKNOWN')} filter: creator {creator_pct:.2f}%, max user {max_user_pct:.2f}%"
-    )
-
-    if creator_pct > CREATOR_MAX_PCT:
-        logger.warning(f"Skipping {getattr(token_info, 'symbol', 'UNKNOWN')}: creator {creator_pct:.2f}% > {CREATOR_MAX_PCT}%")
-        return False
-
-    if max_user_pct > CREATOR_MAX_PCT:
-        logger.warning(f"Skipping {getattr(token_info, 'symbol', 'UNKNOWN')}: user {max_user_pct:.2f}% > {CREATOR_MAX_PCT}%")
-        return False
-
-    return True
-
 class PumpTrader:
     """Coordinates trading operations for pump.fun tokens with focus on freshness."""
     def __init__(
@@ -423,20 +384,49 @@ class PumpTrader:
             finally:
                 self.token_queue.task_done()
 
-    async def _handle_token(
-        self, token_info: TokenInfo
-    ) -> None:
+    async def _handle_token(self, token_info: TokenInfo) -> None:
         """Handle a new token creation event.
     
         Args:
             token_info: Token information
         """
         try:
-            holders, supply = await self.solana_client.get_token_largest_accounts_and_supply(token_info.mint)
-        
-            # --- Place the filter here ---
-            if not await passes_simple_creator_and_user_filter(token_info, holders, supply):
-                return  # Skip this token if it fails the filter
+            
+            # Fetch full transaction using signature
+            tx = await self.solana_client.get_transaction(
+                token_info.signature, commitment="confirmed"
+            )
+    
+            balances = tx["meta"].get("postTokenBalances", [])
+            if not balances:
+                logger.warning(f"{token_info.symbol}: No balances found. Skipping.")
+                return
+    
+            from decimal import Decimal
+            import os
+    
+            CREATOR_MAX = Decimal(os.getenv("CREATOR_MAX_PCT", "4.0"))
+            BUNDLE_MAX = Decimal(os.getenv("BUNDLE_MAX_PCT", "5.0"))
+    
+            creator = str(token_info.creator)
+            curve = str(token_info.associated_bonding_curve)
+    
+            total = creator_amt = bundle_amt = 0
+            for bal in balances:
+                amt = int(bal["uiTokenAmount"]["amount"])
+                total += amt
+                owner = bal.get("owner")
+                if owner == creator:
+                    creator_amt += amt
+                elif owner != curve:
+                    bundle_amt += amt
+    
+            if total > 0:
+                c_pct = (Decimal(creator_amt) / Decimal(total)) * 100
+                b_pct = (Decimal(bundle_amt) / Decimal(total)) * 100
+    
+                if c_pct > CREATOR_MAX and b_pct < BUNDLE_MAX:
+                    return  # Token fails filter — skip
             
             # -----------------------------------------------------------
 
@@ -448,6 +438,28 @@ class PumpTrader:
                     f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
                 )
                 await asyncio.sleep(self.wait_time_after_creation)
+            
+            # -----------------------------------------------------------
+            
+            # Buy token
+            logger.info(
+                f"Buying {self.buy_amount:.6f} SOL worth of {token_info.symbol}..."
+            )
+            buy_result: TradeResult = await self.buyer.execute(token_info)
+            
+            if buy_result.success:
+                await self._handle_successful_buy(token_info, buy_result)
+            else:
+                await self._handle_failed_buy(token_info, buy_result)
+            
+            # Only wait for next token in yolo mode
+            if self.yolo_mode:
+                logger.info(
+                    f"YOLO mode enabled. Waiting {self.wait_time_before_new_token} seconds before looking for next token..."
+                )
+                await asyncio.sleep(self.wait_time_before_new_token)
+
+            # -----------------------------------------------------------
 
             # Buy token
             logger.info(
