@@ -111,20 +111,18 @@ class SolanaClient:
 
     async def get_transaction(self, signature: str) -> dict[str, Any] | None:
         body = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getTransaction",
-            "params": [
-                signature,
-                {
-                    "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0
-                }
-            ]
-        }
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTransaction",
+        "params": [
+            signature,
+            {
+                "encoding": "jsonParsed",
+                "maxSupportedTransactionVersion": 0
+            }
+        ]
+    }
         return await self.post_rpc(body)
-
-
 
     async def get_token_account_balance(self, token_account: Pubkey) -> int:
         """Get token balance for an account.
