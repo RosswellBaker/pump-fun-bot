@@ -109,12 +109,7 @@ def run_all_bots():
     
     processes = []
     skipped_bots = 0
-    
-def run_bot_process(config_path):
-    import asyncio
-    asyncio.run(start_bot(config_path))
 
-    
     for file in bot_files:
         try:
             cfg = load_bot_config(str(file))
@@ -146,7 +141,11 @@ def run_bot_process(config_path):
     for p in processes:
         p.join()
         logging.info(f"Process {p.name} completed")
+        # No additional code needed here; all logic is handled above.
 
+def run_bot_process(config_path):
+    import asyncio
+    asyncio.run(start_bot(config_path))
 
 def main() -> None:
     logging.basicConfig(
