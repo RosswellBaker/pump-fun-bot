@@ -24,18 +24,11 @@ trade:
   buy_slippage: 0.25 # Maximum acceptable price deviation (0.3 = 30%)
   sell_slippage: 0.25
 
-  fast_window_sec: 6 # Sell quickly if 10%+ gain
-  fast_profit_pct: 15 # Early exit profit threshold
-  max_hold_time: 30 # Failsafe exit
-  fallback_profit_pct: 7 # Minimum gain for mid-window sell
-  volume_threshold: 1000 # Volume threshold for mid-window (optional)
-  target_profit_percent: 10 # Target profit in percentage (e.g., 10 = 10%)
-
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
   extreme_fast_mode: true
-  extreme_fast_token_amount: 200000 # Amount of tokens to buy
+  extreme_fast_token_amount: 2000000 # Amount of tokens to buy
 
 # Priority fee configuration
 # Manage transaction speed and cost on the Solana network.
@@ -52,7 +45,7 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.004 # Maximum token age in seconds for processing
+  max_token_age: 0.005 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
 
