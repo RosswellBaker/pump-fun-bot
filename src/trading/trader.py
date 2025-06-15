@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from time import monotonic
 import os
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -383,53 +384,32 @@ class PumpTrader:
                 logger.error(f"Error in token queue processor: {e!s}")
             finally:
                 self.token_queue.task_done()
-
     async def _handle_token(self, token_info: TokenInfo) -> None:
         """Handle a new token creation event.
-    
+
         Args:
             token_info: Token information
         """
         try:
-            
-            # Fetch full transaction using signature
-            tx = await self.solana_client.get_transaction(
-                token_info.signature, commitment="confirmed"
-            )
-    
-            balances = tx["meta"].get("postTokenBalances", [])
-            if not balances:
-                logger.warning(f"{token_info.symbol}: No balances found. Skipping.")
-                return
-    
-            from decimal import Decimal
-            import os
-    
-            CREATOR_MAX = Decimal(os.getenv("CREATOR_MAX_PCT", "4.0"))
-            BUNDLE_MAX = Decimal(os.getenv("BUNDLE_MAX_PCT", "5.0"))
-    
-            creator = str(token_info.creator)
-            curve = str(token_info.associated_bonding_curve)
-    
-            total = creator_amt = bundle_amt = 0
-            for bal in balances:
-                amt = int(bal["uiTokenAmount"]["amount"])
-                total += amt
-                owner = bal.get("owner")
-                if owner == creator:
-                    creator_amt += amt
-                elif owner != curve:
-                    bundle_amt += amt
-    
-            if total > 0:
-                c_pct = (Decimal(creator_amt) / Decimal(total)) * 100
-                b_pct = (Decimal(bundle_amt) / Decimal(total)) * 100
-    
-                if c_pct > CREATOR_MAX and b_pct < BUNDLE_MAX:
-                    return  # Token fails filter — skip
-            
-            # -----------------------------------------------------------
+            # Fetch transaction
+            tx = await self.solana_client.get_transaction(token_info.signature, commitment="confirmed")
+            if not tx:
+                return  # fail silently if tx fetch fails
 
+            creator = str(token_info.creator)
+            MAX_CREATOR_UNITS = 40_000_000_000_000  # 40M tokens in micro-units
+
+            logs = tx.get("meta", {}).get("logMessages", [])
+
+            for log in logs:
+                if "Instruction: Buy" in log and f"user: {creator}" in log and "tokenAmount:" in log:
+                    match = re.search(r'tokenAmount:\s*"?(?P<amt>\d+)', log)
+                    if match:
+                        if int(match.group("amt")) > MAX_CREATOR_UNITS:
+                            return  # silently skip this token
+
+        # -----------------------------------------------------------
+    
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
             if not self.extreme_fast_mode:
                 # Save token info to file
