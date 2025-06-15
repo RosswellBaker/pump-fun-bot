@@ -395,66 +395,65 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-            # --- PRE-BUY FILTER: cap user mint at 4%, bundled wallets at 5% ---
-            TOTAL_SUPPLY_RAW = int(os.getenv("PUMP_FUN_TOTAL_SUPPLY_RAW", 1_000_000_000 * 10**6))
+            # --- PRE-BUY FILTER: Anchor CPI log parsing ---
 
-            holders, supply = await self.solana_client.get_token_largest_accounts_and_supply(
-                token_info.mint
-            )
-            if supply <= 0:
-                logger.warning(f"Skipping {token_info.symbol} — zero supply.")
+            # Step 1: fetch the full mint transaction
+            tx_sig = token_info.tx_signature
+            tx = await self.solana_client.get_transaction(tx_sig, commitment="confirmed")
+
+            # Step 2: locate & parse the Anchor CPI JSON block
+            cpi_block = None
+            for log in tx["meta"]["logMessages"]:
+                if log.startswith("Program log: {"):
+                    try:
+                        cpi_block = json.loads(log[len("Program log: "):])
+                        break
+                    except json.JSONDecodeError:
+                        continue
+
+            if not cpi_block:
+                logger.warning(f"Skipping {token_info.symbol}: unable to parse Anchor CPI log.")
                 return
 
-            user_addr  = str(token_info.user)
-            curve_addr = str(token_info.associated_bonding_curve)
-            vault_addr = str(token_info.creator_vault)
+            # Step 3: extract raw values
+            user_raw     = int(cpi_block["userRaw"])
+            bundles      = cpi_block.get("bundledWallets", [])
+            bundle_raw   = sum(int(w["amount"]) for w in bundles)
+            bundle_count = len(bundles)
 
-            user_raw     = 0
-            bundle_raw   = 0
-            bundle_count = 0
-
-            for bal in holders:
-                addr = bal["address"]
-                amt  = int(bal["amount"])
-
-                if addr == user_addr:
-                    user_raw += amt
-                elif addr in (curve_addr, vault_addr):
-                    # ignore the bonding curve & the internal vault
-                    continue
-                else:
-                    bundle_raw   += amt
-                    bundle_count += 1
-
-            user_pct   = user_raw   / TOTAL_SUPPLY_RAW * 100
-            bundle_pct = bundle_raw / TOTAL_SUPPLY_RAW * 100
+            # Step 4: compute percentages
+            TOTAL_SUPPLY       = float(os.getenv("PUMP_FUN_TOTAL_SUPPLY", 1_000_000_000))
+            user_pct, bundle_pct = (
+                user_raw   / TOTAL_SUPPLY * 100,
+                bundle_raw / TOTAL_SUPPLY * 100,
+            )
 
             logger.info(
-                f"{token_info.symbol} pre-buy scan: "
+                f"{token_info.symbol} pre-buy via CPI: "
                 f"user {user_pct:.2f}% | bundles {bundle_pct:.2f}% "
                 f"across {bundle_count} wallet(s)"
             )
 
-            USER_MAX_PCT   = float(os.getenv("USER_MAX_PCT",   4.0))
-            BUNDLE_MAX_PCT = float(os.getenv("BUNDLE_MAX_PCT", 5.0))
+            # Step 5: apply thresholds from .env
+            CREATOR_MAX_PCT = float(os.getenv("CREATOR_MAX_PCT", 4.0))
+            BUNDLE_MAX_PCT  = float(os.getenv("BUNDLE_MAX_PCT", 5.0))
 
-            if user_pct > USER_MAX_PCT:
+            if user_pct > CREATOR_MAX_PCT:
                 logger.warning(
-                    f"⚠️ Skipping {token_info.symbol}: "
-                    f"user mint {user_pct:.2f}% > {USER_MAX_PCT}%"
+                    f" Skipping {token_info.symbol}: "
+                    f"minter {user_pct:.2f}% > {CREATOR_MAX_PCT}%"
                 )
                 return
 
             if bundle_pct > BUNDLE_MAX_PCT:
                 logger.warning(
-                    f"⚠️ Skipping {token_info.symbol}: "
-                    f"bundles {bundle_pct:.2f}% > {BUNDLE_MAX_PCT}%"
+                    f" Skipping {token_info.symbol}: "
+                    f"bundled wallets {bundle_pct:.2f}% > {BUNDLE_MAX_PCT}%"
                 )
                 return
 
-            logger.info(f"✅ {token_info.symbol} passed pre-buy filters.")
+            logger.info(f" {token_info.symbol} passed CPI-based filters.")
 
-            
             # -----------------------------------------------------------
 
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
