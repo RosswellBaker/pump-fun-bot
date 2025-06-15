@@ -23,7 +23,7 @@ trade:
   buy_amount: 0.1 # amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.25 # Maximum acceptable price deviation (0.3 = 30%)
   sell_slippage: 0.25
-  sell:
+
   fast_window_sec: 6 # Sell quickly if 10%+ gain
   fast_profit_pct: 15 # Early exit profit threshold
   max_hold_time: 30 # Failsafe exit
@@ -52,16 +52,16 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.002 # Maximum token age in seconds for processing
+  max_token_age: 0.004 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: false # Continuously trade tokens
 
 # Retry and timeout settings
 retries:
-  max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 15 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  max_attempts: 2 # Number of attempts for transaction submission
+  wait_after_creation: 10 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 7 # holding period after buy transaction
-  wait_before_new_token: 8 # pause between token trades
+  wait_before_new_token: 5 # pause between token trades
 
 # Token and account management
 cleanup:
@@ -76,4 +76,4 @@ cleanup:
 
 # Node provider configuration (not implemented)
 node:
-  max_rps: 20 # Maximum requests per second
+  max_rps: 6 # Maximum requests per second
