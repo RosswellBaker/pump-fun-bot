@@ -44,14 +44,14 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.5 # Maximum token age in seconds for processing
+  max_token_age: 1.0 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
 
 # Retry and timeout settings
 retries:
   max_attempts: 2 # Number of attempts for transaction submission
-  wait_after_creation: 0 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_creation: 3 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 15 # holding period after buy transaction
   wait_before_new_token: 5 # pause between token trades
 
