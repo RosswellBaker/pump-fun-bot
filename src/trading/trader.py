@@ -400,19 +400,15 @@ class PumpTrader:
                 )
                 await asyncio.sleep(self.wait_time_after_creation)
     
-            tx = await self._client.get_transaction(token_info.signature)
-            creator = str(token_info.creator)
-            MAX_CREATOR_UNITS = 40000000000000  # 40M tokens in micro-units
-    
-            logs = tx.get("meta", {}).get("logMessages", [])
-    
-            for log in logs:
-                if "Instruction: Buy" in log and f"user: {creator}" in log and "tokenAmount:" in log:
-                    match = re.search(r'tokenAmount:\s*"?(?P<amt>\d+)', log)
-                    if match:
-                        if int(match.group("amt")) > MAX_CREATOR_UNITS:
-                            logger.info(f"Token skipped — creator bought too much: {int(match.group('amt'))}")
-                            return  # skip this token silently
+            if token_info.creator_token_amount > 50_000_000:
+                return  # Skip token silently
+        
+        # Wait for bonding curve to stabilize (unless in extreme fast mode)
+            if not self.extreme_fast_mode:
+                logger.info(
+                f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
+                )
+                await asyncio.sleep(self.wait_time_after_creation)
             
             # -----------------------------------------------------------
             

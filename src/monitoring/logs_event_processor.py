@@ -64,7 +64,8 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-                        
+                        creator_token_amount = self._extract_creator_trade_amount(logs, parsed_data["creator"])
+                       
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -75,6 +76,7 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
+                            creator_token_amount=creator_token_amount,
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
@@ -173,3 +175,22 @@ class LogsEventProcessor:
             PumpAddresses.PROGRAM,
         )
         return derived_address
+
+    def _extract_creator_trade_amount(self, logs: list[str], creator_address: str) -> float:
+            """Extract creator's token amount from TradeEvent in transaction logs."""
+            try:
+                for log in logs:
+                    # Look for TradeEvent where user=creator and isBuy=true
+                    if ("tokenAmount" in log and 
+                        f'"user":"{creator_address}"' in log and 
+                        '"isBuy":true' in log):
+                        
+                        # Extract tokenAmount from TradeEvent log
+                        start = log.find('"tokenAmount":"') + 14
+                        if start > 13:
+                            end = log.find('"', start)  
+                            if end > start:
+                                return int(log[start:end]) / 1_000_000
+            except:
+                pass
+            return 0.0
