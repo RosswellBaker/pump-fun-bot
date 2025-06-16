@@ -403,13 +403,6 @@ class PumpTrader:
             if token_info.creator_token_amount > 50_000_000:
                 return  # Skip token silently
         
-        # Wait for bonding curve to stabilize (unless in extreme fast mode)
-            if not self.extreme_fast_mode:
-                logger.info(
-                f"Waiting for {self.wait_time_after_creation} seconds for the bonding curve to stabilize..."
-                )
-                await asyncio.sleep(self.wait_time_after_creation)
-            
             # -----------------------------------------------------------
             
             # Buy token

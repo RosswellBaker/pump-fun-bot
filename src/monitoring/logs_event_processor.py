@@ -21,6 +21,7 @@ class LogsEventProcessor:
 
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
+    TRADE_EVENT_DISCRIMINATOR: Final[int] = struct.unpack("<Q", bytes([189, 219, 127, 211, 78, 230, 97, 238]))[0]
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -64,7 +65,7 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-                        creator_token_amount = self._extract_creator_trade_amount(logs, parsed_data["creator"])
+                        creator_token_amount = self._extract_creator_trade_amount(logs, parsed_data["creator"], decoded_data)
                        
                         return TokenInfo(
                             name=parsed_data["name"],
@@ -177,20 +178,21 @@ class LogsEventProcessor:
         return derived_address
 
     def _extract_creator_trade_amount(self, logs: list[str], creator_address: str) -> float:
-            """Extract creator's token amount from TradeEvent in transaction logs."""
-            try:
-                for log in logs:
-                    # Look for TradeEvent where user=creator and isBuy=true
-                    if ("tokenAmount" in log and 
-                        f'"user":"{creator_address}"' in log and 
-                        '"isBuy":true' in log):
-                        
-                        # Extract tokenAmount from TradeEvent log
-                        start = log.find('"tokenAmount":"') + 14
-                        if start > 13:
-                            end = log.find('"', start)  
-                            if end > start:
-                                return int(log[start:end]) / 1_000_000
-            except:
-                pass
-            return 0.0
+        """Extract creator's token amount from TradeEvent in transaction logs."""
+        try:
+            for log in logs:
+            # Look for TradeEvent where user=creator and isBuy=true
+                if ("tokenAmount" in log and 
+                f'"user":"{creator_address}"' in log and 
+                '"isBuy":true' in log):
+                
+                # Extract tokenAmount from TradeEvent log
+                    start = log.find('"tokenAmount":"') + 14
+                if start > 13:
+                    end = log.find('"', start)  
+                    if end > start:
+                        return int(log[start:end]) / 1_000_000
+        except:
+            pass
+        return 0.0
+    
