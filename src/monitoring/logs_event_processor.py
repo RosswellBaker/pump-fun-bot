@@ -65,7 +65,7 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-                        creator_token_amount = self._extract_creator_trade_amount(logs, parsed_data["creator"], decoded_data)
+                        creator_token_amount = self._extract_creator_trade_amount(logs, parsed_data["creator"])
                        
                         return TokenInfo(
                             name=parsed_data["name"],
