@@ -18,7 +18,6 @@ class TokenInfo:
     name: str
     symbol: str
     uri: str
-    signature: str = ""
     mint: Pubkey
     bonding_curve: Pubkey
     associated_bonding_curve: Pubkey
@@ -47,7 +46,8 @@ class TokenInfo:
             user=Pubkey.from_string(data["user"]),
             creator=Pubkey.from_string(data["creator"]),
             creator_vault=Pubkey.from_string(data["creator_vault"]),
-            signature=data["signature"]
+            signature=data["signature"],
+            creator_token_amount=data.get("creator_token_amount", 0.0),
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -67,6 +67,7 @@ class TokenInfo:
             "creator": str(self.creator),
             "creatorVault": str(self.creator_vault),
             "signature": self.signature,
+            "creator_token_amount": self.creator_token_amount,
         }
 
 
