@@ -31,7 +31,6 @@ from trading.position import Position
 from trading.seller import TokenSeller
 from utils.logger import get_logger
 
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = get_logger(__name__)
 
