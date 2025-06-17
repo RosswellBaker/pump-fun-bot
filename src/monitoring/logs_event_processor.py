@@ -1,16 +1,10 @@
-"""
-Event processing for pump.fun tokens using logsSubscribe data.
-"""
+from typing import Final
 
 import base64
 import struct
-from typing import Final
-
-import base58
 from solders.pubkey import Pubkey
 
 from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
-from core.pubkeys import PumpAddresses, SystemAddresses
 from trading.base import TokenInfo
 from utils.logger import get_logger
 
@@ -22,7 +16,8 @@ class LogsEventProcessor:
 
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
-    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870 
+    # Add this new discriminator for BUY instructions
+    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -66,11 +61,12 @@ class LogsEventProcessor:
                         
                         if discriminator == self.CREATE_DISCRIMINATOR:
                             create_data = self._parse_create_instruction(decoded_data)
-                        elif discriminator == self.BUY_DISCRIMINATOR:  # Use constant
+                        elif discriminator == self.BUY_DISCRIMINATOR:
                             buy_data = self._parse_buy_instruction(decoded_data)
                             if buy_data and "amount" in buy_data:
+                                # Convert from raw token units to decimal
                                 creator_token_amount = buy_data["amount"] / (10 ** TOKEN_DECIMALS)
-                            
+                        
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
 
@@ -81,7 +77,9 @@ class LogsEventProcessor:
         # Create addresses
         mint = Pubkey.from_string(create_data["mint"])
         bonding_curve = Pubkey.from_string(create_data["bondingCurve"])
-        associated_curve = self._find_associated_bonding_curve(mint, bonding_curve)
+        associated_curve = self._find_associated_bonding_curve(
+            mint, bonding_curve
+        )
         creator = Pubkey.from_string(create_data["creator"])
         creator_vault = self._find_creator_vault(creator)
         
@@ -97,20 +95,6 @@ class LogsEventProcessor:
             creator_vault=creator_vault,
             creator_token_amount=creator_token_amount,
         )
-
-    def _parse_buy_instruction(self, data: bytes) -> dict | None:
-        """Parse the buy instruction data for creator token amount."""
-        if len(data) < 16:
-            return None
-        try:
-            discriminator = struct.unpack("<Q", data[:8])[0]
-            if discriminator != self.BUY_DISCRIMINATOR:  # Use constant
-                return None
-            amount = struct.unpack("<Q", data[8:16])[0]
-            return {"amount": amount}
-        except Exception as e:
-            logger.error(f"Failed to parse buy instruction: {e}")
-            return None
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
@@ -160,6 +144,20 @@ class LogsEventProcessor:
             return parsed_data
         except Exception as e:
             logger.error(f"Failed to parse create instruction: {e}")
+            return None
+
+    def _parse_buy_instruction(self, data: bytes) -> dict | None:
+        """Parse the buy instruction data for creator token amount."""
+        if len(data) < 16:
+            return None
+        try:
+            discriminator = struct.unpack("<Q", data[:8])[0]
+            if discriminator != self.BUY_DISCRIMINATOR:
+                return None
+            amount = struct.unpack("<Q", data[8:16])[0]
+            return {"amount": amount}
+        except Exception as e:
+            logger.error(f"Failed to parse buy instruction: {e}")
             return None
 
     def _find_associated_bonding_curve(

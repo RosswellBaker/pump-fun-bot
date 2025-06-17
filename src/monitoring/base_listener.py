@@ -26,5 +26,6 @@ class BaseTokenListener(ABC):
             token_callback: Callback function for new tokens
             match_string: Optional string to match in token name/symbol
             creator_address: Optional creator address to filter by
+            creator_token_amount_max: Max tokens the creator can buy at creation
         """
         pass
