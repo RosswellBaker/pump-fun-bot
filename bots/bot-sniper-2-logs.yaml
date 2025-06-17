@@ -47,6 +47,7 @@ filters:
   max_token_age: 0.5 #Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: false # Continuously trade tokens
+  enable_creator_filter: true
 
 # Retry and timeout settings
 retries:
