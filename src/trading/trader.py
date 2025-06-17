@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from time import monotonic
 
+import uvloop
 from solders.pubkey import Pubkey
 
 from cleanup.modes import (
@@ -31,6 +32,7 @@ from trading.position import Position
 from trading.seller import TokenSeller
 from utils.logger import get_logger
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = get_logger(__name__)
 
@@ -86,7 +88,6 @@ class PumpTrader:
         bro_address: str | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
-        creator_token_amount_max: float | None = None,
     ):
         """Initialize the pump trader.
         Args:
@@ -220,7 +221,6 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
-        self.creator_token_amount_max = creator_token_amount_max
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
@@ -272,7 +272,6 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
-                        creator_token_amount_max=self.creator_token_amount_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
@@ -317,7 +316,6 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
-                creator_token_amount_max=self.creator_token_amount_max,
             )
         )
         
