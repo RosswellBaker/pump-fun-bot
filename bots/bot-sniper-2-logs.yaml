@@ -20,16 +20,16 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.0001 # Amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
-  sell_slippage: 0.3
+  sell_slippage: 0.2
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
   take_profit_percentage: 0.3 # Take profit at 20% gain (0.2 = 20%)
   stop_loss_percentage: 0.2 # Stop loss at 20% loss (0.2 = 20%)
   max_hold_time: 25 # Maximum hold time in seconds
-  price_check_interval: 2 # Check price every 2 seconds
+  price_check_interval: 1 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
@@ -52,14 +52,14 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.1 # Maximum token age in seconds for processing
+  max_token_age: 0.01 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
-  yolo_mode: false # Continuously trade tokens
+  yolo_mode: true # Continuously trade tokens
   creator_token_amount_max: 50000000 # Don't buy if creator bought >50M tokens
 
 # Retry and timeout settings
 retries:
-  max_attempts: 1 # Number of attempts for transaction submission
+  max_attempts: 2 # Number of attempts for transaction submission
   wait_after_creation: 3 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 25 # Holding period after buy transaction
   wait_before_new_token: 5 # Pause between token trades
@@ -77,4 +77,4 @@ cleanup:
 
 # Node provider configuration (not implemented)
 node:
-  max_rps: 7 # Maximum requests per second
+  max_rps: 10 # Maximum requests per second
