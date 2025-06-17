@@ -85,7 +85,7 @@ async def start_bot(config_path: str):
         bro_address=cfg["filters"].get("bro_address"),
         marry_mode=cfg["filters"].get("marry_mode", False),
         yolo_mode=cfg["filters"].get("yolo_mode", False),
-        enable_creator_filter=cfg["filters"].get("enable_creator_filter", True),
+        creator_token_amount_max=cfg["filters"].get("creator_token_amount_max"),
     )
     
     await trader.start()

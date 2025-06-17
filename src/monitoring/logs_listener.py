@@ -37,6 +37,7 @@ class LogsListener(BaseTokenListener):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
+        creator_token_amount_max: float | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
@@ -76,6 +77,17 @@ class LogsListener(BaseTokenListener):
                             ):
                                 logger.info(
                                     f"Token not created by {creator_address}. Skipping..."
+                                )
+                                continue
+
+                            # Creator token amount filter
+                            if (
+                                creator_token_amount_max is not None
+                                and token_info.creator_token_amount > creator_token_amount_max
+                            ):
+                                logger.info(
+                                    f"Creator bought {token_info.creator_token_amount:,.0f} tokens "
+                                    f"(>{creator_token_amount_max:,.0f}). Skipping..."
                                 )
                                 continue
 
