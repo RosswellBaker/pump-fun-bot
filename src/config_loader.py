@@ -19,7 +19,7 @@ CONFIG_VALIDATION_RULES = [
     ("priority_fees.extra_percentage", float, 0, 1, "priority_fees.extra_percentage must be between 0 and 1"),
     ("priority_fees.hard_cap", int, 0, float('inf'), "priority_fees.hard_cap must be a non-negative integer"),
     ("retries.max_attempts", int, 0, 100, "retries.max_attempts must be between 0 and 100"),
-    ("filters.max_token_age", (int, float), 0, float('inf'), "filters.max_token_age must be a non-negative number")
+    ("filters.max_token_age", (int, float), 0, float('inf'), "filters.max_token_age must be a non-negative number"),
     ("filters.creator_token_amount_max", (int, float), 0, float('inf'), "filters.creator_token_amount_max must be a non-negative number"),
 ]
 
