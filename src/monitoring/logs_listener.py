@@ -82,14 +82,13 @@ class LogsListener(BaseTokenListener):
                                 continue
 
                             # Creator token amount filter
-                            if (
-                                creator_token_amount_max is not None
-                                and token_info.creator_token_amount > creator_token_amount_max
-                            ):
-                                logger.info(
-                                    f"Creator bought {token_info.creator_token_amount:,.0f} tokens "
-                                    f"(>{creator_token_amount_max:,.0f}). Skipping..."
-                                )
+                            if creator_token_amount_max is not None:
+                                if token_info.creator_token_amount > creator_token_amount_max:
+                                    logger.info(
+                                        f"Token filtered out: creator bought {token_info.creator_token_amount:.0f} tokens "
+                                        f"(max allowed: {creator_token_amount_max:.0f}). "
+                                        f"Token: {token_info.name} ({token_info.symbol})"
+                                 )
                                 continue
 
                             await token_callback(token_info)
