@@ -50,7 +50,7 @@ class PumpTrader:
         geyser_api_token: str | None = None,
         geyser_auth_type: str = "x-token",
         pumpportal_url: str = "wss://pumpportal.fun/api/data",
-        creator_token_amount_max: float | None = None,
+    
         
         # Extreme fast mode settings
         extreme_fast_mode: bool = False,
@@ -88,6 +88,7 @@ class PumpTrader:
         bro_address: str | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
+        creator_token_amount_max: float | None = None,
     ):
         """Initialize the pump trader.
         Args:
