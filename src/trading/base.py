@@ -18,13 +18,13 @@ class TokenInfo:
     name: str
     symbol: str
     uri: str
+    signature: str
     mint: Pubkey
     bonding_curve: Pubkey
     associated_bonding_curve: Pubkey
     user: Pubkey
     creator: Pubkey
     creator_vault: Pubkey
-    signature: str
     creator_token_amount: float = 0.0
 
 
