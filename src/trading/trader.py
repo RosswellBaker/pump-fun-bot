@@ -50,7 +50,9 @@ class PumpTrader:
         geyser_api_token: str | None = None,
         geyser_auth_type: str = "x-token",
         pumpportal_url: str = "wss://pumpportal.fun/api/data",
-
+        creator_token_amount_max: float | None = None,
+        
+        # Extreme fast mode settings
         extreme_fast_mode: bool = False,
         extreme_fast_token_amount: int = 30,
         
@@ -219,6 +221,7 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
+        self.creator_token_amount_max = creator_token_amount_max
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
@@ -270,6 +273,7 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
+                        creator_token_amount_max=self.creator_token_amount_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
@@ -314,6 +318,7 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
+                creator_token_amount_max=self.creator_token_amount_max,
             )
         )
         
