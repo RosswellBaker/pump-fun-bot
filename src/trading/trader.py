@@ -9,7 +9,6 @@ import os
 from datetime import datetime
 from time import monotonic
 
-import uvloop
 from solders.pubkey import Pubkey
 
 from cleanup.modes import (
