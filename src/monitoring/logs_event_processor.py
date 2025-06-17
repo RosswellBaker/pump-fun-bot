@@ -1,5 +1,5 @@
 from typing import Final
-
+import base58
 import base64
 import struct
 from solders.pubkey import Pubkey
