@@ -4,7 +4,9 @@ import multiprocessing
 from datetime import datetime
 from pathlib import Path
 
-import sys
+import uvloop
+
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 from config_loader import load_bot_config, print_config_summary
 from trading.trader import PumpTrader
@@ -52,6 +54,13 @@ async def start_bot(config_path: str):
         extreme_fast_mode=cfg["trade"].get("extreme_fast_mode", False),
         extreme_fast_token_amount=cfg["trade"].get("extreme_fast_token_amount", 30),
         
+        # Exit strategy configuration
+        exit_strategy=cfg["trade"].get("exit_strategy", "time_based"),
+        take_profit_percentage=cfg["trade"].get("take_profit_percentage"),
+        stop_loss_percentage=cfg["trade"].get("stop_loss_percentage"),
+        max_hold_time=cfg["trade"].get("max_hold_time"),
+        price_check_interval=cfg["trade"].get("price_check_interval", 10),
+        
         # Listener configuration
         listener_type=cfg["filters"]["listener_type"],
         
@@ -59,6 +68,9 @@ async def start_bot(config_path: str):
         geyser_endpoint=cfg.get("geyser", {}).get("endpoint"),
         geyser_api_token=cfg.get("geyser", {}).get("api_token"),
         geyser_auth_type=cfg.get("geyser", {}).get("auth_type"),
+        
+        # PumpPortal configuration (if applicable)
+        pumpportal_url=cfg.get("pumpportal", {}).get("url", "wss://pumpportal.fun/api/data"),
         
         # Priority fee configuration
         enable_dynamic_priority_fee=cfg.get("priority_fees", {}).get("enable_dynamic", False),
@@ -72,7 +84,7 @@ async def start_bot(config_path: str):
         wait_time_after_creation=cfg.get("retries", {}).get("wait_after_creation", 15),
         wait_time_after_buy=cfg.get("retries", {}).get("wait_after_buy", 15),
         wait_time_before_new_token=cfg.get("retries", {}).get("wait_before_new_token", 15),
-        max_token_age=cfg.get("timing", {}).get("max_token_age", 0.5),
+        max_token_age=cfg.get("timing", {}).get("max_token_age", 0.001),
         token_wait_timeout=cfg.get("timing", {}).get("token_wait_timeout", 30),
         
         # Cleanup settings
@@ -85,7 +97,6 @@ async def start_bot(config_path: str):
         bro_address=cfg["filters"].get("bro_address"),
         marry_mode=cfg["filters"].get("marry_mode", False),
         yolo_mode=cfg["filters"].get("yolo_mode", False),
-        creator_token_amount_max=cfg["filters"].get("creator_token_amount_max"),
     )
     
     await trader.start()
@@ -110,7 +121,7 @@ def run_all_bots():
     
     processes = []
     skipped_bots = 0
-
+    
     for file in bot_files:
         try:
             cfg = load_bot_config(str(file))
@@ -125,8 +136,7 @@ def run_all_bots():
             if cfg.get("separate_process", False):
                 logging.info(f"Starting bot '{bot_name}' in separate process")
                 p = multiprocessing.Process(
-                    target=run_bot_process,
-                    args=(str(file),),
+                    target=lambda path=str(file): asyncio.run(start_bot(path)), 
                     name=f"bot-{bot_name}"
                 )
                 p.start()
@@ -142,11 +152,7 @@ def run_all_bots():
     for p in processes:
         p.join()
         logging.info(f"Process {p.name} completed")
-        # No additional code needed here; all logic is handled above.
 
-def run_bot_process(config_path):
-    import asyncio
-    asyncio.run(start_bot(config_path))
 
 def main() -> None:
     logging.basicConfig(
