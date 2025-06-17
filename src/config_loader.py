@@ -20,13 +20,13 @@ CONFIG_VALIDATION_RULES = [
     ("priority_fees.hard_cap", int, 0, float('inf'), "priority_fees.hard_cap must be a non-negative integer"),
     ("retries.max_attempts", int, 0, 100, "retries.max_attempts must be between 0 and 100"),
     ("filters.max_token_age", (int, float), 0, float('inf'), "filters.max_token_age must be a non-negative number")
-    ("filters.creator_token_amount_max", (int, float), 0, float('inf'), "filters.creator_token_amount_max must be a non-negative number"),
 ]
 
 # Valid values for enum-like fields
 VALID_VALUES = {
-    "filters.listener_type": ["logs", "blocks", "geyser"],
-    "cleanup.mode": ["disabled", "on_fail", "after_sell", "post_session"]
+    "filters.listener_type": ["logs", "blocks", "geyser", "pumpportal"],
+    "cleanup.mode": ["disabled", "on_fail", "after_sell", "post_session"],
+    "trade.exit_strategy": ["time_based", "tp_sl", "manual"]
 }
 
 
