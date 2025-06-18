@@ -148,17 +148,28 @@ class LogsEventProcessor:
             return None
 
     def _parse_buy_instruction(self, data: bytes) -> dict | None:
+        """Parse buy instruction data.
+
+        Args:
+            data: Raw instruction data
+
+        Returns:
+            Parsed instruction data or None if invalid
+        """
         try:
             discriminator = struct.unpack("<Q", data[:8])[0]
             if discriminator != self.BUY_DISCRIMINATOR:
                 return None
             
-            # Parse the structured data just like create instruction
+            # Parse the structured data fields directly
             offset = 8
             # Read amount (u64)
             amount = struct.unpack("<Q", data[offset:offset + 8])[0]
             
-            return {"amount": amount}
+            # Convert to token amount with 6 decimal places
+            token_amount = amount / 10**6
+            
+            return {"amount": token_amount}
         except Exception as e:
             logger.error(f"Failed to parse buy instruction: {e}")
             return None
