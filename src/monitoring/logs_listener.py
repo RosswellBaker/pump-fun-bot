@@ -61,6 +61,7 @@ class LogsListener(BaseTokenListener):
 
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
+                            (   f"DEBUG: creator_token_amount={token_info.creator_token_amount}, max_allowed={creator_token_amount_max}")
                             )
 
                             if match_string and not (
@@ -86,8 +87,6 @@ class LogsListener(BaseTokenListener):
                                 if token_info.creator_token_amount > creator_token_amount_max:
                                     logger.info(
                                         f"Token filtered out: creator bought {token_info.creator_token_amount:.0f} tokens "
-                                        f"(max allowed: {creator_token_amount_max:.0f}). "
-                                        f"Token: {token_info.name} ({token_info.symbol})"
                                  )
                                 continue
 
