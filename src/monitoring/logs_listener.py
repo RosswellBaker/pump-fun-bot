@@ -61,9 +61,12 @@ class LogsListener(BaseTokenListener):
 
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
-                            (   f"DEBUG: creator_token_amount={token_info.creator_token_amount}, max_allowed={creator_token_amount_max}")
                             )
+                            
+                            # Debug log - separate from the above log
+                            logger.info(f"DEBUG: creator_token_amount={token_info.creator_token_amount}, max_allowed={creator_token_amount_max}")
 
+                            # Match string filter
                             if match_string and not (
                                 match_string.lower() in token_info.name.lower()
                                 or match_string.lower() in token_info.symbol.lower()
@@ -73,6 +76,7 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
+                            # Creator address filter
                             if (
                                 creator_address
                                 and str(token_info.user) != creator_address
@@ -82,12 +86,14 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
-                            # Creator token amount filter
-                            if creator_token_amount_max is not None:
-                                if token_info.creator_token_amount > creator_token_amount_max:
-                                    logger.info(
-                                        f"Token filtered out: creator bought {token_info.creator_token_amount:.0f} tokens "
-                                 )
+                            # Creator token amount filter - follows same pattern as other filters
+                            if (
+                                creator_token_amount_max is not None
+                                and token_info.creator_token_amount > creator_token_amount_max
+                            ):
+                                logger.info(
+                                    f"Token filtered out: creator bought {token_info.creator_token_amount:.0f} tokens (>{creator_token_amount_max:,.0f}). Skipping..."
+                                )
                                 continue
 
                             await token_callback(token_info)
