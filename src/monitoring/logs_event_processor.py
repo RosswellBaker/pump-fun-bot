@@ -61,8 +61,10 @@ class LogsEventProcessor:
                         
                         if discriminator == self.CREATE_DISCRIMINATOR:
                             create_data = self._parse_create_instruction(decoded_data)
+                        
                         elif discriminator == self.BUY_DISCRIMINATOR:
                             buy_data = self._parse_buy_instruction(decoded_data)
+                            
                             if buy_data and "amount" in buy_data:
                                 # Convert from raw token units to decimal
                                 creator_token_amount = buy_data["amount"] / (10 ** TOKEN_DECIMALS)
@@ -166,10 +168,8 @@ class LogsEventProcessor:
             # Read amount (u64)
             amount = struct.unpack("<Q", data[offset:offset + 8])[0]
             
-            # Convert to token amount with 6 decimal places
-            token_amount = amount / 10**6
-            
-            return {"amount": token_amount}
+            # Return raw amount (conversion happens in process_program_logs)
+            return {"amount": amount}
         except Exception as e:
             logger.error(f"Failed to parse buy instruction: {e}")
             return None
