@@ -29,7 +29,7 @@ trade:
   take_profit_percentage: 0.3 # Take profit at 20% gain (0.2 = 20%)
   stop_loss_percentage: 0.2 # Stop loss at 20% loss (0.2 = 20%)
   max_hold_time: 25 # Maximum hold time in seconds
-  price_check_interval: 1 # Check price every 2 seconds
+  price_check_interval: 2 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
@@ -52,7 +52,7 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.01 # Maximum token age in seconds for processing
+  max_token_age: 1 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
   creator_token_amount_max: 50000000 # Don't buy if creator bought >50M tokens
@@ -60,9 +60,9 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 2 # Number of attempts for transaction submission
-  wait_after_creation: 3 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_creation: 2 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 25 # Holding period after buy transaction
-  wait_before_new_token: 5 # Pause between token trades
+  wait_before_new_token: 3 # Pause between token trades
 
 # Token and account management
 cleanup:
