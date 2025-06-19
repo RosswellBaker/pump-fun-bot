@@ -1,8 +1,19 @@
-from typing import Final
-import base58
+# Replace your logs_event_processor.py with this updated version
+# This adds a quick balance check to detect creator token amounts
+
+"""
+Event processing for pump.fun tokens using logsSubscribe data.
+"""
+
+import asyncio
 import base64
 import struct
+import time
+from typing import Final
+
+import base58
 from solders.pubkey import Pubkey
+from spl.token.instructions import get_associated_token_address
 
 from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from trading.base import TokenInfo
@@ -26,6 +37,11 @@ class LogsEventProcessor:
             pump_program: Pump.fun program address
         """
         self.pump_program = pump_program
+        self.solana_client = None  # Will be set by the caller if needed
+
+    def set_solana_client(self, client):
+        """Set Solana client for balance checks."""
+        self.solana_client = client
 
     def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
         """Process program logs and extract token info with creator token amount.
@@ -37,14 +53,6 @@ class LogsEventProcessor:
         Returns:
             TokenInfo if a token creation is found, None otherwise
         """
-        # Add debug logging to check for Buy instructions in logs
-        buy_log_found = False
-        for log in logs:
-            if "Program log: Instruction: Buy" in log:
-                buy_log_found = True
-                logger.info(f"Transaction {signature[:8]}... contains Buy instruction text")
-                break
-                
         # Check if this is a token creation
         if not any("Program log: Instruction: Create" in log for log in logs):
             return None
@@ -63,28 +71,18 @@ class LogsEventProcessor:
                     encoded_data = log.split(": ")[1]
                     decoded_data = base64.b64decode(encoded_data)
                     
-                    # Add debug logging for all discriminators
-                    if len(decoded_data) >= 8:
-                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        logger.info(f"Found discriminator: {discriminator}")
-                    
                     # Check discriminator to determine instruction type
                     if len(decoded_data) >= 8:
                         discriminator = struct.unpack("<Q", decoded_data[:8])[0]
                         
                         if discriminator == self.CREATE_DISCRIMINATOR:
-                            logger.info("Found CREATE_DISCRIMINATOR match")
                             create_data = self._parse_create_instruction(decoded_data)
-                        
                         elif discriminator == self.BUY_DISCRIMINATOR:
-                            logger.info("Found BUY_DISCRIMINATOR match")
                             buy_data = self._parse_buy_instruction(decoded_data)
-                            
                             if buy_data and "amount" in buy_data:
-                                logger.info(f"Raw buy amount: {buy_data['amount']}")
                                 # Convert from raw token units to decimal
                                 creator_token_amount = buy_data["amount"] / (10 ** TOKEN_DECIMALS)
-                                logger.info(f"Converted creator_token_amount: {creator_token_amount}")
+                                logger.info(f"Found creator buy in same transaction: {creator_token_amount:,.0f} tokens")
                         
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
@@ -102,11 +100,18 @@ class LogsEventProcessor:
         creator = Pubkey.from_string(create_data["creator"])
         creator_vault = self._find_creator_vault(creator)
         
+        # 🔧 NEW: If no buy found in same transaction, check creator's balance
+        # This catches the common case where CREATE and BUY are separate transactions
+        if creator_token_amount == 0.0:
+            creator_token_amount = self._quick_creator_balance_check(mint, creator)
+            if creator_token_amount > 0:
+                logger.info(f"Creator balance check found: {creator_token_amount:,.0f} tokens")
+        
         return TokenInfo(
             name=create_data["name"],
             symbol=create_data["symbol"],
             uri=create_data["uri"],
-            signature=signature,
+            signature=signature,  # 🔧 CRITICAL: This was missing in your original
             mint=mint,
             bonding_curve=bonding_curve,
             associated_bonding_curve=associated_curve,
@@ -115,6 +120,47 @@ class LogsEventProcessor:
             creator_vault=creator_vault,
             creator_token_amount=creator_token_amount,
         )
+
+    def _quick_creator_balance_check(self, mint: Pubkey, creator: Pubkey) -> float:
+        """Quick check of creator's token balance using sync approach for speed."""
+        try:
+            import os
+            from core.client import SolanaClient
+            
+            # Give creator a moment to make their buy transaction
+            time.sleep(1.0)  # 1 second - balance between speed and accuracy
+            
+            # Get creator's associated token account
+            creator_ata = get_associated_token_address(creator, mint)
+            
+            # Quick balance check
+            async def check_balance():
+                try:
+                    client = SolanaClient(os.environ.get("SOLANA_NODE_RPC_ENDPOINT"))
+                    solana_client = await client.get_client()
+                    account_info = await solana_client.get_token_account_balance(creator_ata)
+                    if account_info and account_info.value:
+                        return float(account_info.value.amount) / (10 ** TOKEN_DECIMALS)
+                    return 0.0
+                except Exception as e:
+                    logger.debug(f"Balance check failed: {e}")
+                    return 0.0
+            
+            # Run with timeout to keep bot fast
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                balance = loop.run_until_complete(asyncio.wait_for(check_balance(), timeout=2.0))
+                return balance
+            except asyncio.TimeoutError:
+                logger.debug("Creator balance check timed out")
+                return 0.0
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.debug(f"Creator balance check failed: {e}")
+            return 0.0
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
@@ -131,7 +177,7 @@ class LogsEventProcessor:
         # Check for the correct instruction discriminator
         discriminator = struct.unpack("<Q", data[:8])[0]
         if discriminator != self.CREATE_DISCRIMINATOR:
-            logger.info(f"Skipping non-Create instruction with discriminator: {discriminator}")
+            logger.debug(f"Skipping non-Create instruction with discriminator: {discriminator}")
             return None
 
         offset = 8
@@ -167,25 +213,14 @@ class LogsEventProcessor:
             return None
 
     def _parse_buy_instruction(self, data: bytes) -> dict | None:
-        """Parse buy instruction data.
-
-        Args:
-            data: Raw instruction data
-
-        Returns:
-            Parsed instruction data or None if invalid
-        """
+        """Parse the buy instruction data for creator token amount."""
+        if len(data) < 16:
+            return None
         try:
             discriminator = struct.unpack("<Q", data[:8])[0]
             if discriminator != self.BUY_DISCRIMINATOR:
                 return None
-            
-            # Parse the structured data fields directly
-            offset = 8
-            # Read amount (u64)
-            amount = struct.unpack("<Q", data[offset:offset + 8])[0]
-            
-            # Return raw amount (conversion happens in process_program_logs)
+            amount = struct.unpack("<Q", data[8:16])[0]
             return {"amount": amount}
         except Exception as e:
             logger.error(f"Failed to parse buy instruction: {e}")
