@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 import websockets
 from solders.pubkey import Pubkey
 
+from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
