@@ -87,15 +87,12 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
-                            raw_max_allowed = int(creator_token_amount_max * (10 ** TOKEN_DECIMALS)) if creator_token_amount_max is not None else None
-                            
                             if (
-                                raw_max_allowed is not None
-                                and token_info.creator_token_amount > raw_max_allowed
+                                creator_token_amount_max is not None
+                                and token_info.creator_token_amount > creator_token_amount_max
                             ):
-                                human_readable_amount = token_info.creator_token_amount / (10 ** TOKEN_DECIMALS)
                                 logger.info(
-                                    f"Creator bought {human_readable_amount:,.2f} tokens "
+                                    f"Creator bought {token_info.creator_token_amount:,.0f} tokens "
                                     f"(>{creator_token_amount_max:,.0f}). Skipping..."
                                 )
                                 continue
