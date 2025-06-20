@@ -141,10 +141,10 @@ class LogsEventProcessor:
                     account_info = await solana_client.get_token_account_balance(creator_ata)
                     if account_info and account_info.value:
                         return float(account_info.value.amount) / (10 ** TOKEN_DECIMALS)
-                    return balance
+                    return 0.0
                 except Exception as e:
                     logger.debug(f"Balance check failed: {e}")
-                    return balance
+                    return 0.0
             
             # Run with timeout to keep bot fast
             loop = asyncio.new_event_loop()
