@@ -111,7 +111,7 @@ class LogsEventProcessor:
             name=create_data["name"],
             symbol=create_data["symbol"],
             uri=create_data["uri"],
-            signature=signature,  # 🔧 CRITICAL: This was missing in your original
+            signature=signature,
             mint=mint,
             bonding_curve=bonding_curve,
             associated_bonding_curve=associated_curve,
