@@ -160,7 +160,7 @@ class LogsEventProcessor:
                 
         except Exception as e:
             logger.debug(f"Creator balance check failed: {e}")
-            return balance
+            return 0.0
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
