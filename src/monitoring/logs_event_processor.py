@@ -132,7 +132,7 @@ class LogsEventProcessor:
             
             # Get creator's associated token account
             creator_ata = get_associated_token_address(creator, mint)
-            
+        
             # Quick balance check
             async def check_balance():
                 try:
@@ -141,10 +141,10 @@ class LogsEventProcessor:
                     account_info = await solana_client.get_token_account_balance(creator_ata)
                     if account_info and account_info.value:
                         return float(account_info.value.amount) / (10 ** TOKEN_DECIMALS)
-                    return 0.0
+                    return balance
                 except Exception as e:
                     logger.debug(f"Balance check failed: {e}")
-                    return 0.0
+                    return balance
             
             # Run with timeout to keep bot fast
             loop = asyncio.new_event_loop()
@@ -160,7 +160,7 @@ class LogsEventProcessor:
                 
         except Exception as e:
             logger.debug(f"Creator balance check failed: {e}")
-            return 0.0
+            return balance
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
