@@ -5,6 +5,9 @@ WebSocket monitoring for pump.fun tokens using logsSubscribe.
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+import os
+import base64
+import struct
 
 import websockets
 from solders.pubkey import Pubkey
@@ -90,6 +93,39 @@ class LogsListener(BaseTokenListener):
                 logger.info("Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
 
+    def _get_initial_buy_amount(self, logs: list[str]) -> float:
+        """Extract the initial buy amount from pump.fun creation transaction."""
+        # Pump.fun buy instruction discriminator
+        BUY_DISCRIMINATOR = 16927863322537952870
+        
+        # Track when we see Create and Buy instructions
+        seen_create = False
+        seen_buy = False
+        
+        for i, log in enumerate(logs):
+            if "Program log: Instruction: Create" in log:
+                seen_create = True
+            elif "Program log: Instruction: Buy" in log and seen_create:
+                seen_buy = True
+            elif seen_buy and "Program data:" in log:
+                # This should be the buy instruction data
+                try:
+                    encoded_data = log.split(": ")[1]
+                    decoded_data = base64.b64decode(encoded_data)
+                    
+                    if len(decoded_data) >= 16:
+                        # Verify discriminator
+                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
+                        if discriminator == BUY_DISCRIMINATOR:
+                            # Extract amount (8 bytes after discriminator)
+                            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+                            # Convert to tokens (pump.fun uses 6 decimals)
+                            return float(amount_raw) / (10 ** 6)
+                except Exception as e:
+                    logger.debug(f"Error parsing buy instruction: {e}")
+                    
+        return 0.0           
+
     async def _subscribe_to_logs(self, websocket) -> None:
         """Subscribe to logs mentioning the pump.fun program.
 
@@ -153,15 +189,26 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # Use the processor to extract token info
+            # Check if this is a token creation
+            if not any("Program log: Instruction: Create" in log for log in logs):
+                return None
+                
+            # Skip swaps
+            if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
+                return None
+
+            # NEW FILTER CODE - Check creator buy amount
+            if os.getenv("FILTER_CREATOR_BUYS", "false").lower() == "true":
+                buy_amount = self._get_creator_buy_amount(logs)
+                if buy_amount > 0:
+                    max_allowed = float(os.getenv("MAX_CREATOR_TOKENS", "50000000"))
+                    if buy_amount > max_allowed:
+                        logger.info(f"Creator bought {buy_amount:,.0f} tokens (> {max_allowed:,.0f}). Skipping...")
+                        return None
+
+            # Continue with normal processing
             return self.event_processor.process_program_logs(logs, signature)
 
-        except asyncio.TimeoutError:
-            logger.debug("No data received for 30 seconds")
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("WebSocket connection closed")
-            raise
         except Exception as e:
             logger.error(f"Error processing WebSocket message: {str(e)}")
-
-        return None
+            return None
