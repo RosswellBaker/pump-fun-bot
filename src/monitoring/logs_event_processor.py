@@ -1,19 +1,15 @@
-# Replace your logs_event_processor.py with this updated version
-# This adds a quick balance check to detect creator token amounts
-
 """
 Event processing for pump.fun tokens using logsSubscribe data.
+Fixed to properly detect creator initial token purchases.
 """
 
-import asyncio
 import base64
+import hashlib
 import struct
-import time
 from typing import Final
 
 import base58
 from solders.pubkey import Pubkey
-from spl.token.instructions import get_associated_token_address
 
 from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from trading.base import TokenInfo
@@ -25,10 +21,9 @@ logger = get_logger(__name__)
 class LogsEventProcessor:
     """Processes events from pump.fun program logs."""
 
-    # Discriminator for create instruction to avoid non-create transactions
-    CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
-    # Add this new discriminator for BUY instructions
-    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
+    # Calculate discriminators correctly using sha256 hashes
+    CREATE_DISCRIMINATOR: Final[int] = struct.unpack("<Q", hashlib.sha256(b"global:create").digest()[:8])[0]
+    BUY_DISCRIMINATOR: Final[int] = struct.unpack("<Q", hashlib.sha256(b"global:buy").digest()[:8])[0]
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -37,11 +32,6 @@ class LogsEventProcessor:
             pump_program: Pump.fun program address
         """
         self.pump_program = pump_program
-        self.solana_client = None  # Will be set by the caller if needed
-
-    def set_solana_client(self, client):
-        """Set Solana client for balance checks."""
-        self.solana_client = client
 
     def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
         """Process program logs and extract token info with creator token amount.
@@ -61,9 +51,10 @@ class LogsEventProcessor:
         if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
             return None
 
-        # Parse both create and buy instructions from program data logs
+        # Parse all program data logs to find CREATE and BUY instructions
         create_data = None
-        creator_token_amount = 0.0
+        creator_token_amount = 0
+        creator_address = None
         
         for log in logs:
             if "Program data:" in log:
@@ -77,81 +68,46 @@ class LogsEventProcessor:
                         
                         if discriminator == self.CREATE_DISCRIMINATOR:
                             create_data = self._parse_create_instruction(decoded_data)
+                            if create_data:
+                                creator_address = create_data.get("creator")
+                        
                         elif discriminator == self.BUY_DISCRIMINATOR:
                             buy_data = self._parse_buy_instruction(decoded_data)
-                            if buy_data and "amount" in buy_data:
-                                # Convert from raw token units to decimal
-                                creator_token_amount = buy_data["amount"] / (10 ** TOKEN_DECIMALS)
-                                logger.info(f"Found creator buy in same transaction: {creator_token_amount:,.0f} tokens")
-                        
+                            if buy_data and creator_address:
+                                # Check if this buy is from the creator (same transaction)
+                                # In pump.fun, creator buys happen immediately after creation
+                                creator_token_amount += buy_data.get("amount", 0)
+                                
                 except Exception as e:
-                    logger.error(f"Failed to process log data: {e}")
+                    logger.debug(f"Failed to process program data log: {e}")
+                    continue
 
-        # Must have create data to proceed
-        if not create_data or "name" not in create_data:
-            return None
-
-        # Create addresses
-        mint = Pubkey.from_string(create_data["mint"])
-        bonding_curve = Pubkey.from_string(create_data["bondingCurve"])
-        associated_curve = self._find_associated_bonding_curve(
-            mint, bonding_curve
-        )
-        creator = Pubkey.from_string(create_data["creator"])
-        creator_vault = self._find_creator_vault(creator)
+        # Create TokenInfo if we successfully parsed the creation
+        if create_data and "name" in create_data:
+            try:
+                mint = Pubkey.from_string(create_data["mint"])
+                bonding_curve = Pubkey.from_string(create_data["bondingCurve"])
+                associated_curve = self._find_associated_bonding_curve(mint, bonding_curve)
+                creator = Pubkey.from_string(create_data["creator"])
+                creator_vault = self._find_creator_vault(creator)
+                
+                return TokenInfo(
+                    name=create_data["name"],
+                    symbol=create_data["symbol"],
+                    uri=create_data["uri"],
+                    mint=mint,
+                    bonding_curve=bonding_curve,
+                    associated_bonding_curve=associated_curve,
+                    user=Pubkey.from_string(create_data["user"]),
+                    creator=creator,
+                    creator_vault=creator_vault,
+                    creator_token_amount=creator_token_amount,  # Raw token amount (with decimals)
+                )
+            except Exception as e:
+                logger.error(f"Failed to create TokenInfo: {e}")
+                return None
         
-        # 🔧 NEW: If no buy found in same transaction, check creator's balance
-        # This catches the common case where CREATE and BUY are separate transactions
-        if creator_token_amount == 0.0:
-            creator_token_amount = self._quick_creator_balance_check(mint, creator)
-            if creator_token_amount > 0:
-                logger.info(f"Creator balance check found: {creator_token_amount:,.0f} tokens")
-        
-        return TokenInfo(
-            name=create_data["name"],
-            symbol=create_data["symbol"],
-            uri=create_data["uri"],
-            signature=signature,  # 🔧 CRITICAL: This was missing in your original
-            mint=mint,
-            bonding_curve=bonding_curve,
-            associated_bonding_curve=associated_curve,
-            user=Pubkey.from_string(create_data["user"]),
-            creator=creator,
-            creator_vault=creator_vault,
-            creator_token_amount=creator_token_amount,
-        )
-
-    async def _quick_creator_balance_check(self, mint: Pubkey, creator: Pubkey) -> float:
-        """Quick check of creator's token balance using proper async approach."""
-        try:
-            if not self.solana_client:
-                return 0.0
-                
-            # Wait longer for account creation with Helius free tier
-            await asyncio.sleep(2.5)
-            
-            # Get creator's associated token account
-            creator_ata = get_associated_token_address(creator, mint)
-            
-            # Get account info instead of token balance
-            account_info = await self.solana_client.get_account_info(creator_ata)
-            
-            if account_info.value is None:
-                return 0.0
-                
-            # Parse SPL token account data
-            account_data = account_info.value.data
-            if len(account_data) < 72:
-                return 0.0
-                
-            # Extract token amount (8 bytes at offset 64)
-            import struct
-            token_amount_raw = struct.unpack('<Q', account_data[64:72])[0]
-            return token_amount_raw / (10 ** TOKEN_DECIMALS)
-            
-        except Exception as e:
-            logger.debug(f"Creator balance check failed: {e}")
-            return 0.0
+        return None
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
@@ -174,10 +130,10 @@ class LogsEventProcessor:
         offset = 8
         parsed_data = {}
 
-        # Parse fields based on CreateEvent structure
+        # Parse fields based on CreateEvent structure from IDL
         fields = [
             ("name", "string"),
-            ("symbol", "string"),
+            ("symbol", "string"), 
             ("uri", "string"),
             ("mint", "publicKey"),
             ("bondingCurve", "publicKey"),
@@ -188,11 +144,17 @@ class LogsEventProcessor:
         try:
             for field_name, field_type in fields:
                 if field_type == "string":
+                    if offset + 4 > len(data):
+                        return None
                     length = struct.unpack("<I", data[offset : offset + 4])[0]
                     offset += 4
+                    if offset + length > len(data):
+                        return None
                     value = data[offset : offset + length].decode("utf-8")
                     offset += length
                 elif field_type == "publicKey":
+                    if offset + 32 > len(data):
+                        return None
                     value = base58.b58encode(data[offset : offset + 32]).decode("utf-8")
                     offset += 32
 
@@ -204,25 +166,32 @@ class LogsEventProcessor:
             return None
 
     def _parse_buy_instruction(self, data: bytes) -> dict | None:
-        """Parse the buy instruction data for creator token amount."""
+        """Parse the buy instruction data to extract token amount.
+
+        Args:
+            data: Raw instruction data
+
+        Returns:
+            Dictionary with amount or None if parsing fails
+        """
         if len(data) < 16:
             return None
+            
         try:
             discriminator = struct.unpack("<Q", data[:8])[0]
             if discriminator != self.BUY_DISCRIMINATOR:
                 return None
+            
+            # The amount is the first argument after discriminator (u64)
             amount = struct.unpack("<Q", data[8:16])[0]
             return {"amount": amount}
+            
         except Exception as e:
-            logger.error(f"Failed to parse buy instruction: {e}")
+            logger.debug(f"Failed to parse buy instruction: {e}")
             return None
 
-    def _find_associated_bonding_curve(
-        self, mint: Pubkey, bonding_curve: Pubkey
-    ) -> Pubkey:
-        """
-        Find the associated bonding curve for a given mint and bonding curve.
-        This uses the standard ATA derivation.
+    def _find_associated_bonding_curve(self, mint: Pubkey, bonding_curve: Pubkey) -> Pubkey:
+        """Find the associated bonding curve for a given mint and bonding curve.
 
         Args:
             mint: Token mint address
@@ -242,8 +211,7 @@ class LogsEventProcessor:
         return derived_address
     
     def _find_creator_vault(self, creator: Pubkey) -> Pubkey:
-        """
-        Find the creator vault for a creator.
+        """Find the creator vault for a creator.
 
         Args:
             creator: Creator address
