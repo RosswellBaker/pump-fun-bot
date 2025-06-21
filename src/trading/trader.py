@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from time import monotonic
 
+import uvloop
 from solders.pubkey import Pubkey
 
 from cleanup.modes import (
@@ -31,6 +32,7 @@ from trading.position import Position
 from trading.seller import TokenSeller
 from utils.logger import get_logger
 
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = get_logger(__name__)
 
@@ -50,9 +52,7 @@ class PumpTrader:
         geyser_api_token: str | None = None,
         geyser_auth_type: str = "x-token",
         pumpportal_url: str = "wss://pumpportal.fun/api/data",
-    
-        
-        # Extreme fast mode settings
+
         extreme_fast_mode: bool = False,
         extreme_fast_token_amount: int = 30,
         
@@ -88,7 +88,6 @@ class PumpTrader:
         bro_address: str | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
-        creator_token_amount_max: float | None = None,
     ):
         """Initialize the pump trader.
         Args:
@@ -222,7 +221,6 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
-        self.creator_token_amount_max = creator_token_amount_max
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
@@ -274,7 +272,6 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
-                        creator_token_amount_max=self.creator_token_amount_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
@@ -319,7 +316,6 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
-                creator_token_amount_max=self.creator_token_amount_max,
             )
         )
         
@@ -399,8 +395,6 @@ class PumpTrader:
                     logger.info(
                         f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
                     )
-                    # 🔧 FIX: Always call task_done() even when skipping
-                    self.token_queue.task_done()
                     continue
 
                 self.processed_tokens.add(token_key)
@@ -408,14 +402,7 @@ class PumpTrader:
                 logger.info(
                     f"Processing fresh token: {token_info.symbol} (age: {token_age:.1f}s)"
                 )
-                
-                try:
-                    await self._handle_token(token_info)
-                except Exception as e:
-                    logger.error(f"Error handling token {token_info.symbol}: {e}")
-                finally:
-                    # 🔧 FIX: Always call task_done() after processing
-                    self.token_queue.task_done()
+                await self._handle_token(token_info)
 
             except asyncio.CancelledError:
                 # Handle cancellation gracefully
@@ -423,12 +410,8 @@ class PumpTrader:
                 break
             except Exception as e:
                 logger.error(f"Error in token queue processor: {e!s}")
-                # 🔧 FIX: Call task_done() on error too
-                try:
-                    self.token_queue.task_done()
-                except ValueError:
-                    # task_done() called more times than there were items
-                    pass
+            finally:
+                self.token_queue.task_done()
 
     async def _handle_token(
         self, token_info: TokenInfo

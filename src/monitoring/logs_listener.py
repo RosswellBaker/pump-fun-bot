@@ -9,7 +9,6 @@ from collections.abc import Awaitable, Callable
 import websockets
 from solders.pubkey import Pubkey
 
-from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
@@ -38,7 +37,6 @@ class LogsListener(BaseTokenListener):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_token_amount_max: float | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
@@ -46,7 +44,6 @@ class LogsListener(BaseTokenListener):
             token_callback: Callback function for new tokens
             match_string: Optional string to match in token name/symbol
             creator_address: Optional creator address to filter by
-            creator_token_amount_max: Max tokens the creator can buy at creation
         """
         while True:
             try:
@@ -63,11 +60,7 @@ class LogsListener(BaseTokenListener):
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
                             )
-                            
-                            # Debug log - separate from the above log
-                            logger.info(f"DEBUG: creator_token_amount={token_info.creator_token_amount}, max_allowed={creator_token_amount_max}")
 
-                            # Match string filter
                             if match_string and not (
                                 match_string.lower() in token_info.name.lower()
                                 or match_string.lower() in token_info.symbol.lower()
@@ -77,23 +70,12 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
-                            # Creator address filter
                             if (
                                 creator_address
                                 and str(token_info.user) != creator_address
                             ):
                                 logger.info(
                                     f"Token not created by {creator_address}. Skipping..."
-                                )
-                                continue
-
-                            if (
-                                creator_token_amount_max is not None
-                                and token_info.creator_token_amount > creator_token_amount_max
-                            ):
-                                logger.info(
-                                    f"Creator bought {token_info.creator_token_amount:,.0f} tokens "
-                                    f"(>{creator_token_amount_max:,.0f}). Skipping..."
                                 )
                                 continue
 

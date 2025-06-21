@@ -17,7 +17,6 @@ class BaseTokenListener(ABC):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_token_amount_max: float | None = None,
     ) -> None:
         """
         Listen for new token creations.
@@ -26,6 +25,5 @@ class BaseTokenListener(ABC):
             token_callback: Callback function for new tokens
             match_string: Optional string to match in token name/symbol
             creator_address: Optional creator address to filter by
-            creator_token_amount_max: Max tokens the creator can buy at creation
         """
         pass
