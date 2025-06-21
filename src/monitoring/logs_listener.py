@@ -21,6 +21,10 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+logger.info(f"ENV CHECK - FILTER_CREATOR_INITIAL_BUY: {os.getenv('FILTER_CREATOR_INITIAL_BUY')}")
+logger.info(f"ENV CHECK - MAX_CREATOR_INITIAL_TOKENS: {os.getenv('MAX_CREATOR_INITIAL_TOKENS')}")
+logger.info(f"ENV CHECK - Current working directory: {os.getcwd()}")
+logger.info(f"ENV CHECK - .env file exists: {os.path.exists('.env')}")
 
 class LogsListener(BaseTokenListener):
     """WebSocket listener for pump.fun token creation events using logsSubscribe."""
