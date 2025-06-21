@@ -236,6 +236,7 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
+        logger.info(f"Creator token amount filter: {'max ' + f'{self.creator_token_amount_max:,.0f}' + ' tokens' if self.creator_token_amount_max is not None else 'disabled'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
