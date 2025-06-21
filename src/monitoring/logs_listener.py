@@ -4,32 +4,28 @@ WebSocket monitoring for pump.fun tokens using logsSubscribe.
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
-
-# ADD THESE THREE IMPORTS:
 import os
-import base64
-import struct
+from collections.abc import Awaitable, Callable
 
 import websockets
 from solders.pubkey import Pubkey
 
+from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
 from utils.logger import get_logger
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = get_logger(__name__)
 
-logger.info(f"ENV CHECK - FILTER_CREATOR_INITIAL_BUY: {os.getenv('FILTER_CREATOR_INITIAL_BUY')}")
-logger.info(f"ENV CHECK - MAX_CREATOR_INITIAL_TOKENS: {os.getenv('MAX_CREATOR_INITIAL_TOKENS')}")
-logger.info(f"ENV CHECK - Current working directory: {os.getcwd()}")
-logger.info(f"ENV CHECK - .env file exists: {os.path.exists('.env')}")
 
 class LogsListener(BaseTokenListener):
     """WebSocket listener for pump.fun token creation events using logsSubscribe."""
 
-    def __init__(self, wss_endpoint: str, pump_program: Pubkey):
+    def __init__(self, wss_endpoint: str, pump_program: Pubkey, solana_client=None):
         """Initialize token listener.
 
         Args:
@@ -41,11 +37,15 @@ class LogsListener(BaseTokenListener):
         self.event_processor = LogsEventProcessor(pump_program)
         self.ping_interval = 20  # seconds
 
+        if solana_client:
+            self.event_processor.set_solana_client(solana_client)
+
     async def listen_for_tokens(
         self,
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
+        creator_token_amount_max: float | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
@@ -53,6 +53,7 @@ class LogsListener(BaseTokenListener):
             token_callback: Callback function for new tokens
             match_string: Optional string to match in token name/symbol
             creator_address: Optional creator address to filter by
+            creator_token_amount_max: Max tokens the creator can buy at creation
         """
         while True:
             try:
@@ -69,7 +70,11 @@ class LogsListener(BaseTokenListener):
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
                             )
+                            
+                            # Debug log - separate from the above log
+                            logger.info(f"DEBUG: creator_token_amount={token_info.creator_token_amount}, max_allowed={creator_token_amount_max}")
 
+                            # Match string filter
                             if match_string and not (
                                 match_string.lower() in token_info.name.lower()
                                 or match_string.lower() in token_info.symbol.lower()
@@ -79,6 +84,7 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
+                            # Creator address filter
                             if (
                                 creator_address
                                 and str(token_info.user) != creator_address
@@ -86,6 +92,14 @@ class LogsListener(BaseTokenListener):
                                 logger.info(
                                     f"Token not created by {creator_address}. Skipping..."
                                 )
+                                continue
+
+                                # Creator token amount filter
+                            filter_enabled = os.getenv('FILTER_CREATOR_INITIAL_BUY', 'false').lower() == 'true'
+                            max_creator_tokens = float(os.getenv('MAX_CREATOR_INITIAL_TOKENS', '50000000'))
+                            
+                            if filter_enabled and token_info.creator_token_amount > max_creator_tokens:
+                                logger.info(f"FILTERED: Creator has {token_info.creator_token_amount:,.0f} tokens (limit: {max_creator_tokens:,.0f})")
                                 continue
 
                             await token_callback(token_info)
@@ -162,24 +176,6 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # Check if this is a token creation
-            if not any("Program log: Instruction: Create" in log for log in logs):
-                return None
-
-            logger.debug(f"Filter enabled: {os.getenv('FILTER_CREATOR_INITIAL_BUY', 'false')}")
-
-            # NEW FILTER CODE STARTS HERE
-            if os.getenv("FILTER_CREATOR_INITIAL_BUY", "false").lower() == "true":
-                creator_buy_amount = self._get_initial_buy_amount(logs)
-                if creator_buy_amount > 0:
-                    max_allowed = float(os.getenv("MAX_CREATOR_INITIAL_TOKENS", "50000000"))
-                    if creator_buy_amount > max_allowed:
-                        logger.info(f"Creator initial buy: {creator_buy_amount:,.0f} tokens (> {max_allowed:,.0f}). Skipping...")
-                        return None
-                    else:
-                        logger.info(f"Creator initial buy: {creator_buy_amount:,.0f} tokens (acceptable)")
-            # NEW FILTER CODE ENDS HERE
-
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
 
@@ -192,41 +188,3 @@ class LogsListener(BaseTokenListener):
             logger.error(f"Error processing WebSocket message: {str(e)}")
 
         return None
-
-    # ADD THIS NEW METHOD HERE:
-    def _get_initial_buy_amount(self, logs: list[str]) -> float:
-        """Extract the initial buy amount from pump.fun creation transaction."""
-        # Pump.fun buy instruction discriminator
-        BUY_DISCRIMINATOR = 16927863322537952870
-        
-        # Track when we see Create and Buy instructions
-        seen_create = False
-        seen_buy = False
-        
-        for i, log in enumerate(logs):
-            if "Program log: Instruction: Create" in log:
-                seen_create = True
-            elif "Program log: Instruction: Buy" in log and seen_create:
-                seen_buy = True
-            elif seen_buy and "Program data:" in log:
-                # This should be the buy instruction data
-                try:
-                    encoded_data = log.split(": ")[1]
-                    decoded_data = base64.b64decode(encoded_data)
-                    
-                    # Buy instruction is 24 bytes: 8 (discriminator) + 8 (amount) + 8 (max_sol)
-                    if len(decoded_data) >= 24:
-                        # Verify discriminator
-                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        if discriminator == BUY_DISCRIMINATOR:
-                            # Extract token amount (8 bytes after discriminator)
-                            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                            # Convert to decimal tokens (pump.fun uses 6 decimals)
-                            token_amount = float(amount_raw) / (10 ** 6)
-                            
-                            logger.debug(f"Found creator buy: {token_amount:,.0f} tokens")
-                            return token_amount
-                except Exception as e:
-                    logger.debug(f"Error parsing buy instruction: {e}")
-                    
-        return 0.0
