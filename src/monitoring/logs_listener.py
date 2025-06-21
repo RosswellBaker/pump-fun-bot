@@ -161,7 +161,9 @@ class LogsListener(BaseTokenListener):
             # Check if this is a token creation
             if not any("Program log: Instruction: Create" in log for log in logs):
                 return None
-                
+
+            logger.debug(f"Filter enabled: {os.getenv('FILTER_CREATOR_INITIAL_BUY', 'false')}")
+
             # NEW FILTER CODE STARTS HERE
             if os.getenv("FILTER_CREATOR_INITIAL_BUY", "false").lower() == "true":
                 creator_buy_amount = self._get_initial_buy_amount(logs)
