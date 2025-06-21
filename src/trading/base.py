@@ -1,5 +1,6 @@
 """
 Base interfaces for trading operations.
+Enhanced with creator token amount tracking for filtering.
 """
 
 from abc import ABC, abstractmethod
@@ -13,20 +14,19 @@ from core.pubkeys import PumpAddresses
 
 @dataclass
 class TokenInfo:
-    """Token information."""
+    """Token information with creator purchase tracking."""
 
     name: str
     symbol: str
     uri: str
-    signature: str
     mint: Pubkey
     bonding_curve: Pubkey
     associated_bonding_curve: Pubkey
     user: Pubkey
     creator: Pubkey
     creator_vault: Pubkey
-    creator_token_amount: float = 0.0
-
+    # New field: tracks how many tokens the creator bought at creation (raw amount with 6 decimals)
+    creator_token_amount: int = 0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TokenInfo":
@@ -48,8 +48,7 @@ class TokenInfo:
             user=Pubkey.from_string(data["user"]),
             creator=Pubkey.from_string(data["creator"]),
             creator_vault=Pubkey.from_string(data["creator_vault"]),
-            signature=data["signature"],
-            creator_token_amount=data.get("creator_token_amount", 0.0),
+            creator_token_amount=data.get("creator_token_amount", 0),
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -68,9 +67,17 @@ class TokenInfo:
             "user": str(self.user),
             "creator": str(self.creator),
             "creatorVault": str(self.creator_vault),
-            "signature": self.signature,
-            "creator_token_amount": self.creator_token_amount,
+            "creator_token_amount": str(self.creator_token_amount),
         }
+    
+    def get_creator_tokens_human_readable(self) -> float:
+        """Get creator token amount in human-readable format (without decimals).
+        
+        Returns:
+            Creator token amount as a float (e.g., 50000000.0 for 50 million tokens)
+        """
+        # Pump.fun tokens use 6 decimals, so divide by 10^6 to get human readable amount
+        return self.creator_token_amount / (10 ** 6)
 
 
 @dataclass
