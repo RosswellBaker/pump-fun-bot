@@ -1,79 +1,128 @@
-# This file defines comprehensive parameters and settings for the trading bot.
-# Carefully review and adjust values to match your trading strategy and risk tolerance.
+# Pump.fun Trading Bot Configuration
+# Enhanced with creator initial buy filtering to prevent buying tokens
+# where creators purchased excessive amounts during token creation
 
-# Bot identification and connection settings
-name: "bot-sniper-2"
-env_file: ".env"
-rpc_endpoint: "${SOLANA_NODE_RPC_ENDPOINT}"
-wss_endpoint: "${SOLANA_NODE_WSS_ENDPOINT}"
-private_key: "${SOLANA_PRIVATE_KEY}"
+# =============================================================================
+# BOT IDENTIFICATION AND CONNECTION SETTINGS
+# =============================================================================
+name: "bot-sniper-2-with-creator-filter"
+env_file: ".env"  # Environment variables file in root directory
+rpc_endpoint: "${SOLANA_NODE_RPC_ENDPOINT}"  # Your Helius RPC endpoint
+wss_endpoint: "${SOLANA_NODE_WSS_ENDPOINT}"  # Your Helius WebSocket endpoint
+private_key: "${SOLANA_PRIVATE_KEY}"         # Your wallet private key
 
-enabled: true # You can turn off the bot w/o removing its config
+enabled: true
 separate_process: true
 
-# Geyser configuration (fastest method for getting updates)
+# =============================================================================
+# GEYSER CONFIGURATION (Alternative to logs - currently unused)
+# =============================================================================
 geyser:
   endpoint: "${GEYSER_ENDPOINT}"
   api_token: "${GEYSER_API_TOKEN}"
-  auth_type: "basic" # or "x-token"
+  auth_type: "basic"
 
-# Trading parameters
-# Control trade execution: amount of SOL per trade and acceptable price deviation
+# =============================================================================
+# TRADING PARAMETERS
+# These control how your bot executes trades
+# =============================================================================
 trade:
-  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
-  buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
-  sell_slippage: 0.2
+  buy_amount: 0.05              # Amount of SOL to spend per token purchase
+  buy_slippage: 0.25            # Maximum price slippage for buys (25%)
+  sell_slippage: 0.3            # Maximum price slippage for sells (30%)
 
-  # Exit strategy configuration
-  exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.3 # Take profit at 20% gain (0.2 = 20%)
-  stop_loss_percentage: 0.2 # Stop loss at 20% loss (0.2 = 20%)
-  max_hold_time: 25 # Maximum hold time in seconds
-  price_check_interval: 2 # Check price every 2 seconds
+  # Exit strategy determines when and how to sell tokens
+  exit_strategy: "tp_sl"        # Options: "time_based", "tp_sl", "manual"
+  take_profit_percentage: 0.3   # Sell when token gains 30%
+  stop_loss_percentage: 0.2     # Sell when token loses 20%
+  max_hold_time: 25             # Maximum time to hold a token (seconds)
+  price_check_interval: 2       # How often to check prices (seconds)
 
-  # EXTREME FAST mode configuration
-  # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
-  # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: false
-  extreme_fast_token_amount: 2000000 # Amount of tokens to buy
+  # EXTREME FAST mode for maximum speed
+  # When enabled, buys tokens immediately without waiting for curve stabilization
+  extreme_fast_mode: true
+  extreme_fast_token_amount: 20 # Number of tokens to buy in extreme fast mode
 
-# Priority fee configuration
-# Manage transaction speed and cost on the Solana network.
-# Note: dynamic mode requires an additional RPC call, which slows down the buying process.
+# =============================================================================
+# PRIORITY FEE CONFIGURATION
+# Higher fees = faster transaction execution but higher costs
+# =============================================================================
 priority_fees:
-  enable_dynamic: false # Use latest transactions to estimate required fee (getRecentPrioritizationFees)
-  enable_fixed: true # Use fixed amount below
-  fixed_amount: 400_000 # Base fee in microlamports
-  extra_percentage: 0.0 # Percentage increase on riority fee regardless of the calculation method (0.1 = 10%)
-  hard_cap: 500_000 # Maximum allowable fee in microlamports to prevent excessive spending
+  enable_dynamic: false         # Don't use dynamic fee calculation (saves RPC calls)
+  enable_fixed: true           # Use fixed fee amount
+  fixed_amount: 200_000        # Fee in microlamports (0.0002 SOL)
+  extra_percentage: 0.0        # Additional fee percentage
+  hard_cap: 200_000           # Maximum fee to prevent overspending
 
-# Filters for token selection
+# =============================================================================
+# TOKEN FILTERING SYSTEM
+# This is where the magic happens - these filters determine which tokens to trade
+# =============================================================================
 filters:
-  match_string: null # Only process tokens with this string in name/symbol
-  bro_address: null # Only trade tokens created by this user address
-  listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 1 # Maximum token age in seconds for processing
-  marry_mode: false # Only buy tokens, skip selling
-  yolo_mode: true # Continuously trade tokens
+  # Basic filters
+  match_string: null            # Only trade tokens containing this string (case-insensitive)
+  bro_address: null            # Only trade tokens created by this specific address
+  listener_type: "logs"        # Use logsSubscribe for token detection
+  max_token_age: 0.001         # Only trade very fresh tokens (1 millisecond max age)
+  
+  # Trading mode controls
+  marry_mode: false            # If true, only buy tokens (never sell)
+  yolo_mode: true             # If true, continuously trade until stopped
+  
+  # CREATOR INITIAL BUY FILTER - The key feature we've built
+  # This prevents trading tokens where the creator bought too many tokens at creation
+  # Value is in human-readable tokens (not raw with decimals)
+  creator_initial_buy_max: 50000000  # 50 million tokens maximum
+  
+  # How this filter works:
+  # - When a token is created, the creator often buys some tokens immediately
+  # - Our system detects this purchase amount from the transaction logs
+  # - If the creator bought more than this limit, we skip the token
+  # - This helps avoid tokens where creators hold too much supply
 
-# Retry and timeout settings
+# =============================================================================
+# RETRY AND TIMING SETTINGS
+# These control how the bot handles failures and timing
+# =============================================================================
 retries:
-  max_attempts: 2 # Number of attempts for transaction submission
-  wait_after_creation: 5 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
-  wait_after_buy: 25 # Holding period after buy transaction
-  wait_before_new_token: 3 # Pause between token trades
+  max_attempts: 1              # Number of transaction retry attempts
+  wait_after_creation: 5       # Seconds to wait after token creation
+  wait_after_buy: 15          # Seconds to hold token after buying
+  wait_before_new_token: 3    # Seconds between token trades (YOLO mode)
 
-# Token and account management
+# =============================================================================
+# ACCOUNT CLEANUP CONFIGURATION
+# Manages token accounts to prevent wallet bloat
+# =============================================================================
 cleanup:
-  # Cleanup mode determines when to manage token accounts. Options:
-  # "disabled": no cleanup will occur.
-  # "on_fail": only clean up if a buy transaction fails.
-  # "after_sell": clean up after selling.
-  # "post_session": clean up all empty accounts after a trading session ends.
-  mode: "post_session"
-  force_close_with_burn: false # Force burning remaining tokens before closing account
-  with_priority_fee: false # Use priority fees for cleanup transactions
+  mode: "post_session"         # When to clean up: "disabled", "on_fail", "after_sell", "post_session"
+  force_close_with_burn: false # Whether to burn remaining tokens when closing accounts
+  with_priority_fee: false    # Whether to use priority fees for cleanup transactions
 
-# Node provider configuration (not implemented)
+# =============================================================================
+# NODE PROVIDER SETTINGS
+# Configured for Helius free tier limits
+# =============================================================================
 node:
-  max_rps: 10 # Maximum requests per second
+  max_rps: 10                  # Maximum requests per second (Helius free tier allows 10)
+
+# =============================================================================
+# CONFIGURATION EXPLANATION
+# =============================================================================
+# This configuration is optimized for:
+# 1. Helius free tier usage (10 RPS limit respected)
+# 2. Windows 11 compatibility (no uvloop dependency)
+# 3. Fast token sniping with creator filtering
+# 4. Minimal RPC usage to stay within rate limits
+#
+# The creator_initial_buy_max filter is the key innovation:
+# - It analyzes transaction logs in real-time
+# - Detects how many tokens the creator bought during creation
+# - Skips tokens where creators bought too much (potential rug pulls)
+# - All without additional RPC calls (uses existing log data)
+#
+# Recommended starting values:
+# - creator_initial_buy_max: 50000000 (50 million tokens)
+# - Adjust based on your risk tolerance and observations
+# - Higher values = more permissive (trade more tokens)
+# - Lower values = more restrictive (trade fewer, potentially safer tokens)
