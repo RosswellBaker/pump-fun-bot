@@ -65,7 +65,7 @@ class LogsEventProcessor:
 
         creator_token_amount = 0
 
-        # Parse all program data logs to sum BUY instructions
+        # Sum all BUY instructions in the logs
         for log in logs:
             if "Program data:" in log:
                 try:

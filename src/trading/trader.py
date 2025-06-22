@@ -375,18 +375,6 @@ class PumpTrader:
             logger.debug(f"Token {token_info.symbol} already processed. Skipping...")
             return
 
-        # --- FILTER: Creator token amount ---
-        if (
-            self.creator_token_amount_max is not None
-            and hasattr(token_info, "creator_token_amount")
-            and token_info.creator_token_amount is not None
-            and token_info.creator_token_amount > self.creator_token_amount_max
-        ):
-            logger.info(
-                f"Token {token_info.symbol} skipped: creator bought too many tokens ({token_info.creator_token_amount})"
-            )
-            return
-
         # Record timestamp when token was discovered
         self.token_timestamps[token_key] = monotonic()
 
@@ -410,8 +398,6 @@ class PumpTrader:
                     logger.info(
                         f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
                     )
-                    # 🔧 FIX: Always call task_done() even when skipping
-                    self.token_queue.task_done()
                     continue
 
                 self.processed_tokens.add(token_key)
@@ -419,14 +405,7 @@ class PumpTrader:
                 logger.info(
                     f"Processing fresh token: {token_info.symbol} (age: {token_age:.1f}s)"
                 )
-                
-                try:
-                    await self._handle_token(token_info)
-                except Exception as e:
-                    logger.error(f"Error handling token {token_info.symbol}: {e}")
-                finally:
-                    # 🔧 FIX: Always call task_done() after processing
-                    self.token_queue.task_done()
+                await self._handle_token(token_info)
 
             except asyncio.CancelledError:
                 # Handle cancellation gracefully
@@ -434,12 +413,8 @@ class PumpTrader:
                 break
             except Exception as e:
                 logger.error(f"Error in token queue processor: {e!s}")
-                # 🔧 FIX: Call task_done() on error too
-                try:
-                    self.token_queue.task_done()
-                except ValueError:
-                    # task_done() called more times than there were items
-                    pass
+            finally:
+                self.token_queue.task_done()
 
     async def _handle_token(
         self, token_info: TokenInfo
