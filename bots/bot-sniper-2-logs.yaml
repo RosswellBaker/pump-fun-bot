@@ -54,7 +54,7 @@ filters:
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
   max_token_age: 0.5 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
-  yolo_mode: false # Continuously trade tokens
+  yolo_mode: true # Continuously trade tokens
   creator_token_amount_max: 50000000
 
 # Retry and timeout settings
