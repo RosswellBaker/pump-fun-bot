@@ -8,7 +8,7 @@ import logging
 _loggers: dict[str, logging.Logger] = {}
 
 
-def get_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
+def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """Get or create a logger with the given name.
 
     Args:
@@ -31,7 +31,7 @@ def get_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
 
 
 def setup_file_logging(
-    filename: str = "pump_trading.log", level: int = logging.DEBUG
+    filename: str = "pump_trading.log", level: int = logging.INFO
 ) -> None:
     """Set up file logging for all loggers.
 

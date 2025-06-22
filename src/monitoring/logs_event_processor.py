@@ -46,94 +46,70 @@ class LogsEventProcessor:
         self.pump_program = pump_program
 
     def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
-        """
-        Process program logs and extract complete token info with creator purchase data.
-
-        This is where the magic happens. We analyze all the log entries from a single
-        transaction to understand both the token creation and any immediate purchases.
+        """Process program logs and extract token info, including creator buy amount.
 
         Args:
-            logs: List of log strings from the WebSocket notification
-            signature: Transaction signature for debugging
+            logs: List of log strings from the notification
+            signature: Transaction signature
 
         Returns:
-            TokenInfo if a token creation is found with creator purchase data, None otherwise
+            TokenInfo if a token creation is found, None otherwise
         """
-        # First, verify this is actually a token creation transaction
+        # Check if this is a token creation
         if not any("Program log: Instruction: Create" in log for log in logs):
             return None
 
-        # Skip token account creations (these are different from token minting)
+        # Skip swaps as the first condition may pass them
         if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
             return None
 
-        # These variables will store our findings as we parse the logs
-        create_data = None
         creator_token_amount = 0
-        creator_address = None
 
-        # Parse all program data logs to find CREATE and BUY instructions
-        # In pump.fun, these often appear in the same transaction
+        # Parse all program data logs to sum BUY instructions
         for log in logs:
             if "Program data:" in log:
                 try:
-                    # Extract and decode the base64 instruction data
                     encoded_data = log.split(": ")[1]
                     decoded_data = base64.b64decode(encoded_data)
-
-                    # Every instruction starts with an 8-byte discriminator
                     if len(decoded_data) >= 8:
                         discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-
-                        if discriminator == self.CREATE_DISCRIMINATOR:
-                            # This is the token creation instruction
-                            create_data = self._parse_create_instruction(decoded_data)
-                            if create_data:
-                                creator_address = create_data.get("creator")
-                                logger.debug(f"Found CREATE instruction for token: {create_data.get('name')}")
-
-                        elif discriminator == self.BUY_DISCRIMINATOR:
-                            # This is a token purchase instruction
+                        if discriminator == self.BUY_DISCRIMINATOR:
                             buy_data = self._parse_buy_instruction(decoded_data)
                             if buy_data:
-                                # Add to total creator purchases (there could be multiple buys)
                                 creator_token_amount += buy_data.get("amount", 0)
-                                logger.debug(f"Found BUY instruction: {buy_data.get('amount', 0)} tokens")
-
                 except Exception as e:
-                    # Log parsing errors for debugging but continue processing
-                    logger.debug(f"Failed to process program data log: {e}")
-                    continue
+                    logger.debug(f"Failed to process buy instruction: {e}")
 
-        # Create TokenInfo if we successfully parsed the creation
-        if create_data and "name" in create_data:
-            try:
-                # Convert string addresses back to Pubkey objects
-                mint = Pubkey.from_string(create_data["mint"])
-                bonding_curve = Pubkey.from_string(create_data["bondingCurve"])
-                associated_curve = self._find_associated_bonding_curve(mint, bonding_curve)
-                creator = Pubkey.from_string(create_data["creator"])
-                creator_vault = self._find_creator_vault(creator)
+        # Find and process program data for CREATE instruction (original logic)
+        for log in logs:
+            if "Program data:" in log:
+                try:
+                    encoded_data = log.split(": ")[1]
+                    decoded_data = base64.b64decode(encoded_data)
+                    parsed_data = self._parse_create_instruction(decoded_data)
+                    if parsed_data and "name" in parsed_data:
+                        mint = Pubkey.from_string(parsed_data["mint"])
+                        bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
+                        associated_curve = self._find_associated_bonding_curve(
+                            mint, bonding_curve
+                        )
+                        creator = Pubkey.from_string(parsed_data["creator"])
+                        creator_vault = self._find_creator_vault(creator)
 
-                # Log what we found for debugging
-                human_readable_amount = creator_token_amount / (10 ** 6)
-                logger.debug(f"Token {create_data['name']}: creator bought {human_readable_amount:,.2f} tokens")
-
-                return TokenInfo(
-                    name=create_data["name"],
-                    symbol=create_data["symbol"],
-                    uri=create_data["uri"],
-                    mint=mint,
-                    bonding_curve=bonding_curve,
-                    associated_bonding_curve=associated_curve,
-                    user=Pubkey.from_string(create_data["user"]),
-                    creator=creator,
-                    creator_vault=creator_vault,
-                    creator_token_amount=creator_token_amount,  # This is the key field for our filter
-                )
-            except Exception as e:
-                logger.error(f"Failed to create TokenInfo: {e}")
-                return None
+                        return TokenInfo(
+                            name=parsed_data["name"],
+                            symbol=parsed_data["symbol"],
+                            uri=parsed_data["uri"],
+                            mint=mint,
+                            bonding_curve=bonding_curve,
+                            associated_bonding_curve=associated_curve,
+                            user=Pubkey.from_string(parsed_data["user"]),
+                            creator=creator,
+                            creator_vault=creator_vault,
+                            creator_token_amount=creator_token_amount,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to process log data: {e}")
 
         return None
 
