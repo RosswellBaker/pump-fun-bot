@@ -31,7 +31,6 @@ from trading.position import Position
 from trading.seller import TokenSeller
 from utils.logger import get_logger
 
-
 logger = get_logger(__name__)
 
 
@@ -50,9 +49,7 @@ class PumpTrader:
         geyser_api_token: str | None = None,
         geyser_auth_type: str = "x-token",
         pumpportal_url: str = "wss://pumpportal.fun/api/data",
-    
-        
-        # Extreme fast mode settings
+
         extreme_fast_mode: bool = False,
         extreme_fast_token_amount: int = 30,
         
@@ -88,7 +85,6 @@ class PumpTrader:
         bro_address: str | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
-        creator_token_amount_max: float | None = None,
     ):
         """Initialize the pump trader.
         Args:
@@ -167,7 +163,7 @@ class PumpTrader:
             max_retries,
         )
         
-       # Initialize the appropriate listener type
+        # Initialize the appropriate listener type
         listener_type = listener_type.lower()
         if listener_type == "geyser":
             if not geyser_endpoint or not geyser_api_token:
@@ -222,7 +218,7 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
-        self.creator_token_amount_max = creator_token_amount_max
+        self.creator_initial_buy_max = creator_initial_buy_max
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
@@ -236,7 +232,6 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
-        logger.info(f"Creator token amount filter: {'max ' + f'{self.creator_token_amount_max:,.0f}' + ' tokens' if self.creator_token_amount_max is not None else 'disabled'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
