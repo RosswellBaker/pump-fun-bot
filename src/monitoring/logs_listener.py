@@ -37,7 +37,6 @@ class LogsListener(BaseTokenListener):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_token_amount_max: float | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
@@ -80,15 +79,6 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
-                            # Filter 3: Creator token amount filter (the heart of our system)
-                            if creator_token_amount_max is not None:
-                                should_skip, reason = self._should_skip_by_creator_amount(
-                                    token_info, creator_token_amount_max
-                                )
-                                if should_skip:
-                                    logger.info(reason)
-                                    continue
-
                             await token_callback(token_info)
 
                     except websockets.exceptions.ConnectionClosed:
@@ -100,42 +90,6 @@ class LogsListener(BaseTokenListener):
                 logger.info("Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
 
-    def _should_skip_by_creator_amount(
-        self, 
-        token_info: TokenInfo, 
-        creator_token_amount_max: float
-    ) -> tuple[bool, str]:
-        """
-        Determine if token should be skipped based on creator's initial purchase amount.
-        
-        This is the core of our filtering system. We compare how many tokens the creator
-        bought during token creation against our maximum threshold.
-        
-        Args:
-            token_info: Token information with creator purchase data
-            creator_token_amount_max: Maximum allowed creator purchase (human-readable)
-            
-        Returns:
-            Tuple of (should_skip, reason_string)
-        """
-        # Convert our human-readable limit to raw format for comparison
-        # Pump.fun uses 6 decimals, so 50 million tokens = 50,000,000 * 10^6
-        max_allowed_raw = int(creator_token_amount_max * (10 ** 6))
-        
-        # Get the human-readable amount for logging
-        creator_amount_human = token_info.get_creator_tokens_human_readable()
-        
-        # Debug logging to help you understand what's happening
-        logger.debug(f"Creator amount check: {creator_amount_human:,.2f} vs {creator_token_amount_max:,.0f} limit")
-        
-        if token_info.creator_token_amount > max_allowed_raw:
-            reason = (f"Creator bought {creator_amount_human:,.2f} tokens "
-                     f"(exceeds {creator_token_amount_max:,.0f} limit). Skipping...")
-            return True, reason
-        
-        # Token passed the filter
-        logger.debug(f"Creator amount OK: {creator_amount_human:,.2f} tokens (within limit)")
-        return False, ""
     async def _subscribe_to_logs(self, websocket) -> None:
         """Subscribe to logs mentioning the pump.fun program.
 
