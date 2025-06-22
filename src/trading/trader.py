@@ -319,7 +319,6 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
-                creator_token_amount_max=self.creator_token_amount_max,
             )
         )
         
