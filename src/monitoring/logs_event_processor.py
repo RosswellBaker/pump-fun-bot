@@ -22,7 +22,7 @@ class LogsEventProcessor:
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
     # Discriminator for buy instruction
-    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
+    BUY_DISCRIMINATOR: Final[int] = 17177263679997991869
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
