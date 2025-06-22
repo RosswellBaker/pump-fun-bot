@@ -218,7 +218,6 @@ class PumpTrader:
         self.bro_address = bro_address
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
-        self.creator_initial_buy_max = creator_initial_buy_max
         
         # State tracking
         self.traded_mints: set[Pubkey] = set()
