@@ -83,6 +83,7 @@ class PumpTrader:
         # Trading filters
         match_string: str | None = None,
         bro_address: str | None = None,
+        creator_initial_buy_max: int | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
     ):
@@ -216,6 +217,7 @@ class PumpTrader:
         # Trading filters/modes
         self.match_string = match_string
         self.bro_address = bro_address
+        self.creator_initial_buy_max = creator_initial_buy_max
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
         
