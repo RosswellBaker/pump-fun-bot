@@ -167,7 +167,7 @@ class PumpTrader:
             max_retries,
         )
         
-        # Initialize the appropriate listener type
+       # Initialize the appropriate listener type
         listener_type = listener_type.lower()
         if listener_type == "geyser":
             if not geyser_endpoint or not geyser_api_token:
@@ -181,7 +181,7 @@ class PumpTrader:
             )
             logger.info("Using Geyser listener for token monitoring")
         elif listener_type == "logs":
-            self.token_listener = LogsListener(wss_endpoint, PumpAddresses.PROGRAM,self.solana_client)
+            self.token_listener = LogsListener(wss_endpoint, PumpAddresses.PROGRAM)
             logger.info("Using logsSubscribe listener for token monitoring")
         elif listener_type == "pumpportal":
             self.token_listener = PumpPortalListener(PumpAddresses.PROGRAM, pumpportal_url)
