@@ -25,7 +25,6 @@ class TokenInfo:
     user: Pubkey
     creator: Pubkey
     creator_vault: Pubkey
-    # New field: tracks how many tokens the creator bought at creation (raw amount with 6 decimals)
     creator_token_amount: int = 0
 
     @classmethod
