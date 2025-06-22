@@ -24,10 +24,6 @@ def setup_logging(bot_name: str):
     
     setup_file_logging(str(log_filename))
 
-def start_bot_process(config_path: str):
-    import asyncio
-    asyncio.run(start_bot(config_path))
-
 async def start_bot(config_path: str):
     """
     Start a trading bot with the configuration from the specified path.
