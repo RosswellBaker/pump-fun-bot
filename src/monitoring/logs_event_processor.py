@@ -21,6 +21,8 @@ class LogsEventProcessor:
 
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
+    # Discriminator for buy instruction
+    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -65,6 +67,23 @@ class LogsEventProcessor:
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
                         
+                        # Add this block to extract creator's buy amount
+                        creator_token_amount = 0
+                        if any("Program log: Instruction: Buy" in log_line for log_line in logs):
+                            for buy_log in logs:
+                                if "Program data:" in buy_log:
+                                    try:
+                                        buy_encoded_data = buy_log.split(": ")[1]
+                                        buy_decoded_data = base64.b64decode(buy_encoded_data)
+                                        buy_parsed = self._parse_buy_instruction(buy_decoded_data)
+                                        if buy_parsed and "amount" in buy_parsed:
+                                            creator_token_amount = buy_parsed["amount"]
+                                            logger.info(f"Found creator buy amount: {creator_token_amount}")
+                                            break
+                                    except Exception as e:
+                                        logger.debug(f"Failed to parse potential buy data: {e}")
+                                        continue
+
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -75,6 +94,7 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
+                            creator_token_amount=creator_token_amount,  # Add this field
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
@@ -129,6 +149,43 @@ class LogsEventProcessor:
             return parsed_data
         except Exception as e:
             logger.error(f"Failed to parse create instruction: {e}")
+            return None
+
+    def _parse_buy_instruction(self, data: bytes) -> dict | None:
+        """Parse the buy instruction data.
+
+        Args:
+            data: Raw instruction data
+
+        Returns:
+            Dictionary of parsed data or None if parsing fails
+        """
+        if len(data) < 8:
+            return None
+            
+        # Check for the correct instruction discriminator
+        discriminator = struct.unpack("<Q", data[:8])[0]
+        if discriminator != self.BUY_DISCRIMINATOR:
+            return None
+
+        offset = 8
+        parsed_data = {}
+
+        # Parse fields based on BuyEvent structure
+        fields = [
+            ("amount", "u64"),  # u64 field for the token amount
+        ]
+
+        try:
+            for field_name, field_type in fields:
+                if field_type == "u64":
+                    value = struct.unpack("<Q", data[offset:offset+8])[0]
+                    offset += 8
+                    parsed_data[field_name] = value
+
+            return parsed_data
+        except Exception as e:
+            logger.error(f"Failed to parse buy instruction: {e}")
             return None
 
     def _find_associated_bonding_curve(
