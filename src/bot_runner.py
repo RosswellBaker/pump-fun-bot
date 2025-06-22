@@ -4,6 +4,10 @@ import multiprocessing
 from datetime import datetime
 from pathlib import Path
 
+import uvloop
+
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 from config_loader import load_bot_config, print_config_summary
 from trading.trader import PumpTrader
 from utils.logger import setup_file_logging
@@ -93,7 +97,6 @@ async def start_bot(config_path: str):
         bro_address=cfg["filters"].get("bro_address"),
         marry_mode=cfg["filters"].get("marry_mode", False),
         yolo_mode=cfg["filters"].get("yolo_mode", False),
-        creator_token_amount_max=cfg["filters"].get("creator_token_amount_max", True)
     )
     
     await trader.start()
@@ -133,11 +136,9 @@ def run_all_bots():
             if cfg.get("separate_process", False):
                 logging.info(f"Starting bot '{bot_name}' in separate process")
                 p = multiprocessing.Process(
-                    target=start_bot,
-                    args=(str(file),),
+                    target=lambda path=str(file): asyncio.run(start_bot(path)), 
                     name=f"bot-{bot_name}"
-)
-
+                )
                 p.start()
                 processes.append(p)
             else:
