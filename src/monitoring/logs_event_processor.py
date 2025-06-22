@@ -62,7 +62,7 @@ class LogsEventProcessor:
         # First, verify this is actually a token creation transaction
         if not any("Program log: Instruction: Create" in log for log in logs):
             return None
-        
+
         # Skip token account creations (these are different from token minting)
         if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
             return None
@@ -71,7 +71,7 @@ class LogsEventProcessor:
         create_data = None
         creator_token_amount = 0
         creator_address = None
-        
+
         # Parse all program data logs to find CREATE and BUY instructions
         # In pump.fun, these often appear in the same transaction
         for log in logs:
@@ -80,18 +80,18 @@ class LogsEventProcessor:
                     # Extract and decode the base64 instruction data
                     encoded_data = log.split(": ")[1]
                     decoded_data = base64.b64decode(encoded_data)
-                    
+
                     # Every instruction starts with an 8-byte discriminator
                     if len(decoded_data) >= 8:
                         discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        
+
                         if discriminator == self.CREATE_DISCRIMINATOR:
                             # This is the token creation instruction
                             create_data = self._parse_create_instruction(decoded_data)
                             if create_data:
                                 creator_address = create_data.get("creator")
                                 logger.debug(f"Found CREATE instruction for token: {create_data.get('name')}")
-                        
+
                         elif discriminator == self.BUY_DISCRIMINATOR:
                             # This is a token purchase instruction
                             buy_data = self._parse_buy_instruction(decoded_data)
@@ -99,7 +99,7 @@ class LogsEventProcessor:
                                 # Add to total creator purchases (there could be multiple buys)
                                 creator_token_amount += buy_data.get("amount", 0)
                                 logger.debug(f"Found BUY instruction: {buy_data.get('amount', 0)} tokens")
-                                
+
                 except Exception as e:
                     # Log parsing errors for debugging but continue processing
                     logger.debug(f"Failed to process program data log: {e}")
@@ -114,11 +114,11 @@ class LogsEventProcessor:
                 associated_curve = self._find_associated_bonding_curve(mint, bonding_curve)
                 creator = Pubkey.from_string(create_data["creator"])
                 creator_vault = self._find_creator_vault(creator)
-                
+
                 # Log what we found for debugging
                 human_readable_amount = creator_token_amount / (10 ** 6)
                 logger.debug(f"Token {create_data['name']}: creator bought {human_readable_amount:,.2f} tokens")
-                
+
                 return TokenInfo(
                     name=create_data["name"],
                     symbol=create_data["symbol"],
@@ -134,7 +134,7 @@ class LogsEventProcessor:
             except Exception as e:
                 logger.error(f"Failed to create TokenInfo: {e}")
                 return None
-        
+
         return None
 
     def _parse_create_instruction(self, data: bytes) -> dict | None:
