@@ -231,6 +231,7 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
+        logger.info(f"Creator initial buy filter: {'disabled' if not hasattr(self, 'creator_initial_buy_max') or self.creator_initial_buy_max is None else f'max {self.creator_initial_buy_max}'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
