@@ -24,7 +24,7 @@ class BaseTokenListener(ABC):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_token_amount_max: float | None = None,
+        creator_initial_buy_max: int | None = None,
     ) -> None:
         """
         Listen for new token creations with comprehensive filtering.
@@ -37,7 +37,7 @@ class BaseTokenListener(ABC):
             token_callback: Callback function to invoke when a valid token is found
             match_string: Optional string to match in token name/symbol (case-insensitive)
             creator_address: Optional creator address to filter by (exact match)
-            creator_token_amount_max: Maximum tokens creator can buy at creation (human-readable)
-                                    For example: 50000000 means 50 million tokens max
-        """
+            creator_initial_buy_max: Maximum tokens creator can buy at creation (human-readable)
+                            For example: 50000000 means 50 million tokens max
+"""
         pass
