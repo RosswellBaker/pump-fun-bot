@@ -377,6 +377,18 @@ class PumpTrader:
             logger.debug(f"Token {token_info.symbol} already processed. Skipping...")
             return
 
+        # --- FILTER: Creator token amount ---
+        if (
+            self.creator_token_amount_max is not None
+            and hasattr(token_info, "creator_token_amount")
+            and token_info.creator_token_amount is not None
+            and token_info.creator_token_amount > self.creator_token_amount_max
+        ):
+            logger.info(
+                f"Token {token_info.symbol} skipped: creator bought too many tokens ({token_info.creator_token_amount})"
+            )
+            return
+
         # Record timestamp when token was discovered
         self.token_timestamps[token_key] = monotonic()
 
