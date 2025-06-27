@@ -26,8 +26,8 @@ trade:
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.3 # Take profit at 20% gain (0.2 = 20%)
-  stop_loss_percentage: 0.25 # Stop loss at 20% loss (0.2 = 20%)
+  take_profit_percentage: 0.3 # Take profit at 30% gain (0.3 = 30%)
+  stop_loss_percentage: 0.3 # Stop loss at 30% loss (0.3 = 30%)
   max_hold_time: 30 # Maximum hold time in seconds
   price_check_interval: 2 # Check price every 2 seconds
 
@@ -52,7 +52,7 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.5 # Maximum token age in seconds for processing
+  max_token_age: 0.9 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
   creator_initial_buy_max: 50000000 # Set your threshold here
@@ -60,9 +60,9 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 11 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
-  wait_after_buy: 25 # Holding period after buy transaction
-  wait_before_new_token: 15 # Pause between token trades
+  wait_after_creation: 4 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_buy: 30 # Holding period after buy transaction
+  wait_before_new_token: 10 # Pause between token trades
 
 # Token and account management
 cleanup:
