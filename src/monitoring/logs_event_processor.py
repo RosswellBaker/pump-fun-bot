@@ -171,11 +171,10 @@ class LogsEventProcessor:
             # Parse amount (u64, 8 bytes)
             raw_value = struct.unpack("<Q", data[8:16])[0]
             
-            # The value from the BUY instruction is NOT a direct token amount
-            # Based on analysis of your logs and the pump.fun protocol:
-            # 1) Convert from bonding curve internal value to tokens
-            # 2) Use much larger divisor to get actual token count
-            human_readable = raw_value / 1_000_000_000_000_000  # 10^15 divisor
+            # Based on pump.fun protocol analysis and observation:
+            # This is the bonding curve function input value
+            # Must divide by 10^9 to get proper token amount scale
+            human_readable = raw_value / 1_000_000_000
             
             parsed_data = {"amount": human_readable}
             logger.info(f"Found creator buy amount: {human_readable:.2f} tokens")
