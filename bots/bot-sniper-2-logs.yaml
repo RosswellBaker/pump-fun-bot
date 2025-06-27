@@ -21,7 +21,7 @@ geyser:
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
   buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
-  buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
+  buy_slippage: 0.15 # Maximum acceptable price deviation (0.15 = 15%)
   sell_slippage: 0.3
 
   # Exit strategy configuration
@@ -52,7 +52,7 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.9 # Maximum token age in seconds for processing
+  max_token_age: 1 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
   creator_initial_buy_max: 50000000 # Set your threshold here
@@ -60,7 +60,7 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 4 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_creation: 8 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 30 # Holding period after buy transaction
   wait_before_new_token: 10 # Pause between token trades
 
