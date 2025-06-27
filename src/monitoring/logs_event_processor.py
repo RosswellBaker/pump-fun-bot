@@ -22,7 +22,7 @@ class LogsEventProcessor:
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
     # Discriminator for buy instruction
-    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
+    BUY_DISCRIMINATOR: Final[int] = 17177263679997991869
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -69,20 +69,25 @@ class LogsEventProcessor:
                         
                         # Add this block to extract creator's buy amount
                         creator_token_amount = 0
-                        if any("Program log: Instruction: Buy" in log_line for log_line in logs):
-                            for buy_log in logs:
-                                if "Program data:" in buy_log:
-                                    try:
-                                        buy_encoded_data = buy_log.split(": ")[1]
-                                        buy_decoded_data = base64.b64decode(buy_encoded_data)
-                                        buy_parsed = self._parse_buy_instruction(buy_decoded_data)
-                                        if buy_parsed and "amount" in buy_parsed:
-                                            creator_token_amount = buy_parsed["amount"]
-                                            logger.info(f"Found creator buy amount: {creator_token_amount}")
-                                            break
-                                    except Exception as e:
-                                        logger.debug(f"Failed to parse potential buy data: {e}")
-                                        continue
+                        # Find Buy instruction log and then look for its associated data log
+                        for i, log in enumerate(logs):
+                            if "Program log: Instruction: Buy" in log:
+                                # Look for the data log that follows this instruction
+                                for j in range(i+1, min(i+5, len(logs))):  # Look ahead a few logs
+                                    if j < len(logs) and "Program data:" in logs[j]:
+                                        try:
+                                            buy_encoded_data = logs[j].split(": ")[1]
+                                            buy_decoded_data = base64.b64decode(buy_encoded_data)
+                                            buy_parsed = self._parse_buy_instruction(buy_decoded_data)
+                                            if buy_parsed and "amount" in buy_parsed:
+                                                creator_token_amount = buy_parsed["amount"]
+                                                logger.info(f"Found creator buy amount: {creator_token_amount}")
+                                                break
+                                        except Exception as e:
+                                            logger.debug(f"Failed to parse potential buy data: {e}")
+                                            continue
+                                # Found a Buy instruction and processed it (or tried to), no need to look further
+                                break
 
                         return TokenInfo(
                             name=parsed_data["name"],
@@ -165,7 +170,7 @@ class LogsEventProcessor:
                 
         discriminator = struct.unpack("<Q", data[:8])[0]
         # Use the correct discriminator
-        if discriminator != 16927863322537952870:  # Correct pump.fun BUY discriminator
+        if discriminator != self.BUY_DISCRIMINATOR:  # Use the class constant
             return None
 
         try:
