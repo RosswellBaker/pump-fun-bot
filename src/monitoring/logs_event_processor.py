@@ -169,22 +169,18 @@ class LogsEventProcessor:
             return None
                 
         discriminator = struct.unpack("<Q", data[:8])[0]
-        # Use the correct discriminator
-        if discriminator != self.BUY_DISCRIMINATOR:  # Use the class constant
+        if discriminator != self.BUY_DISCRIMINATOR:
             return None
 
         try:
             # Parse amount (u64, 8 bytes)
             raw_value = struct.unpack("<Q", data[8:16])[0]
             
-            # Based on transaction analysis:
-            # 1. Apply the base divisor (10^12)
-            # 2. Apply the precise correction factor (5.1662)
-            base_amount = raw_value / 1_000_000_000_000
-            token_amount = base_amount * 5.1662
+            # For pump.fun protocol, the BUY instruction contains a raw amount 
+            # that needs to be divided by 10^12 to get the actual token amount
+            token_amount = raw_value / 1_000_000_000_000
             
             parsed_data = {"amount": token_amount}
-            logger.info(f"Found creator buy amount: {token_amount:.2f} tokens")
 
             return parsed_data
         except Exception as e:
