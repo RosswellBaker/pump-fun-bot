@@ -22,7 +22,7 @@ class LogsEventProcessor:
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
     # Discriminator for buy instruction
-    BUY_DISCRIMINATOR: Final[int] = 17177263679997991869
+    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -164,20 +164,22 @@ class LogsEventProcessor:
             return None
                 
         discriminator = struct.unpack("<Q", data[:8])[0]
-        if discriminator != self.BUY_DISCRIMINATOR:
+        # Use the correct discriminator
+        if discriminator != 16927863322537952870:  # Correct pump.fun BUY discriminator
             return None
 
         try:
             # Parse amount (u64, 8 bytes)
             raw_value = struct.unpack("<Q", data[8:16])[0]
             
-            # Based on pump.fun protocol analysis and observation:
-            # This is the bonding curve function input value
-            # Must divide by 10^9 to get proper token amount scale
-            human_readable = raw_value / 1_000_000_000
+            # Based on transaction analysis:
+            # 1. Apply the base divisor (10^12)
+            # 2. Apply the precise correction factor (5.1662)
+            base_amount = raw_value / 1_000_000_000_000
+            token_amount = base_amount * 5.1662
             
-            parsed_data = {"amount": human_readable}
-            logger.info(f"Found creator buy amount: {human_readable:.2f} tokens")
+            parsed_data = {"amount": token_amount}
+            logger.info(f"Found creator buy amount: {token_amount:.2f} tokens")
 
             return parsed_data
         except Exception as e:
