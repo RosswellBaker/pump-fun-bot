@@ -4,6 +4,7 @@ Event processing for pump.fun tokens using logsSubscribe data.
 
 import base64
 import struct
+import json
 from typing import Final
 
 import base58
@@ -69,23 +70,19 @@ class LogsEventProcessor:
                         
                         # Add this block to extract creator's buy amount
                         creator_token_amount = 0
-                        # Find Buy instruction log and then look for its associated data log
-                        for i, log in enumerate(logs):
-                            if "Program log: Instruction: Buy" in log:
-                                # Look for the data log that follows this instruction
-                                for j in range(i+1, min(i+5, len(logs))):  # Look ahead a few logs
-                                    if j < len(logs) and "Program data:" in logs[j]:
-                                        try:
-                                            buy_encoded_data = logs[j].split(": ")[1]
-                                            buy_decoded_data = base64.b64decode(buy_encoded_data)
-                                            buy_parsed = self._parse_buy_instruction(buy_decoded_data)
-                                            if buy_parsed and "amount" in buy_parsed:
-                                                creator_token_amount = buy_parsed["amount"]
-                                                logger.info(f"Found creator buy amount: {creator_token_amount}")
-                                                break
-                                        except Exception as e:
-                                            logger.debug(f"Failed to parse potential buy data: {e}")
-                                            continue
+                        for log_line in logs:
+                            # Target the specific log containing the JSON trade data
+                            if "Pump.fun: anchor Self CPI Log" in log_line and '"isBuy":true' in log_line:
+                                try:
+                                    # Pass the entire log line to the new parser
+                                    buy_parsed = self._parse_buy_instruction(log_line)
+                                    if buy_parsed and "amount" in buy_parsed:
+                                        creator_token_amount = buy_parsed["amount"]
+                                        logger.info(f"Found creator buy amount: {creator_token_amount:,.2f} tokens")
+                                        break  # Found the buy, exit the loop
+                                except Exception as e:
+                                    logger.debug(f"Failed to parse potential buy log: {e}")
+                                    continue
                                 # Found a Buy instruction and processed it (or tried to), no need to look further
                                 break
 
@@ -156,35 +153,27 @@ class LogsEventProcessor:
             logger.error(f"Failed to parse create instruction: {e}")
             return None
 
-    def _parse_buy_instruction(self, data: bytes) -> dict | None:
-        """Parse the buy instruction data.
-
-        Args:
-            data: Raw instruction data
-
-        Returns:
-            Dictionary of parsed data or None if parsing fails
+    def _parse_buy_instruction(self, log_line: str) -> dict | None:
         """
-        if len(data) < 8:
-            return None
-                
-        discriminator = struct.unpack("<Q", data[:8])[0]
-        if discriminator != self.BUY_DISCRIMINATOR:
-            return None
-
+        REPLACEMENT METHOD:
+        Parses the JSON data from the 'Trade' event log to get the exact token amount.
+        This is the correct and fast method, using only the data already received.
+        """
         try:
-            # Parse amount (u64, 8 bytes)
-            raw_value = struct.unpack("<Q", data[8:16])[0]
-            
-            # For pump.fun protocol, the BUY instruction contains a raw amount 
-            # that needs to be divided by 10^12 to get the actual token amount
-            token_amount = raw_value / 1_000_000_000_000
-            
-            parsed_data = {"amount": token_amount}
+            # Extract the JSON part of the log
+            json_str = log_line.split("Pump.fun: anchor Self CPI Log")[1].strip()
+            event_data = json.loads(json_str)
 
-            return parsed_data
-        except Exception as e:
-            logger.error(f"Failed to parse buy instruction: {e}")
+            # Check if it's a buy event and has the token amount
+            if event_data.get("isBuy") and "tokenAmount" in event_data:
+                # The token amount is a raw integer, divide by 10^6 for pump.fun's 6 decimals
+                raw_amount = int(event_data["tokenAmount"])
+                token_amount = raw_amount / 1_000_000  # 10**6
+                return {"amount": token_amount}
+            
+            return None
+        except (json.JSONDecodeError, IndexError, KeyError, ValueError) as e:
+            logger.debug(f"Failed to parse buy event log: {e}")
             return None
 
     def _find_associated_bonding_curve(

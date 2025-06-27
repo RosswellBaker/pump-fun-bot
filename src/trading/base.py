@@ -25,7 +25,7 @@ class TokenInfo:
     user: Pubkey
     creator: Pubkey
     creator_vault: Pubkey
-    creator_token_amount: int = 0
+    creator_token_amount: float = 0.0
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TokenInfo":
@@ -47,7 +47,7 @@ class TokenInfo:
             user=Pubkey.from_string(data["user"]),
             creator=Pubkey.from_string(data["creator"]),
             creator_vault=Pubkey.from_string(data["creator_vault"]),
-            creator_token_amount=data.get("creator_token_amount", 0),
+            creator_token_amount=float(data.get("creator_token_amount", 0.0)),
         )
 
     def to_dict(self) -> dict[str, str]:
@@ -68,16 +68,6 @@ class TokenInfo:
             "creatorVault": str(self.creator_vault),
             "creator_token_amount": str(self.creator_token_amount),
         }
-    
-    def get_creator_tokens_human_readable(self) -> float:
-        """Get creator token amount in human-readable format (without decimals).
-        
-        Returns:
-            Creator token amount as a float (e.g., 50000000.0 for 50 million tokens)
-        """
-        # Pump.fun tokens use 6 decimals, so divide by 10^6 to get human readable amount
-        return self.creator_token_amount / (10 ** 6)
-
 
 @dataclass
 class TradeResult:
