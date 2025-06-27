@@ -162,8 +162,7 @@ class LogsEventProcessor:
         """
         if len(data) < 8:
             return None
-            
-        # Check for the correct instruction discriminator
+                
         discriminator = struct.unpack("<Q", data[:8])[0]
         if discriminator != self.BUY_DISCRIMINATOR:
             return None
@@ -171,17 +170,13 @@ class LogsEventProcessor:
         offset = 8
         parsed_data = {}
 
-        # Parse fields based on BuyEvent structure
-        fields = [
-            ("amount", "u64"),  # u64 field for the token amount
-        ]
-
         try:
-            for field_name, field_type in fields:
-                if field_type == "u64":
-                    value = struct.unpack("<Q", data[offset:offset+8])[0]
-                    offset += 8
-                    parsed_data[field_name] = value
+            # Parse amount (u64, 8 bytes)
+            raw_value = struct.unpack("<Q", data[offset:offset+8])[0]
+            # Convert to human-readable value (6 decimal places)
+            human_readable = raw_value / 1_000_000
+            parsed_data["amount"] = human_readable
+            logger.info(f"Found creator buy amount: {human_readable:.2f} tokens")
 
             return parsed_data
         except Exception as e:
