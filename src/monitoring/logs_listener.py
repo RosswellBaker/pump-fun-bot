@@ -165,7 +165,7 @@ class LogsListener(BaseTokenListener):
             signature = log_data.get("signature", "unknown")
 
             # Use the processor to extract token info
-            return self.event_processor.process_program_logs(logs, signature)
+            return await self.event_processor.process_program_logs(logs, signature)
 
         except asyncio.TimeoutError:
             logger.debug("No data received for 30 seconds")

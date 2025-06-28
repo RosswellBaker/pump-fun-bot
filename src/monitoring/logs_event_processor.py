@@ -2,14 +2,16 @@
 Event processing for pump.fun tokens using logsSubscribe data.
 """
 
+import asyncio
 import base64
 import struct
 import json
+import os
 from typing import Final
 
 import base58
 from solders.pubkey import Pubkey
-
+from solana.rpc.async_api import AsyncClient
 from core.pubkeys import PumpAddresses, SystemAddresses
 from trading.base import TokenInfo
 from utils.logger import get_logger
@@ -26,9 +28,14 @@ class LogsEventProcessor:
     BUY_DISCRIMINATOR: Final[int] = 17177263679997991869
 
     def __init__(self, pump_program: Pubkey):
+        """Initialize event processor.
+
+        Args:
+            pump_program: Pump.fun program address
+        """
         self.pump_program = pump_program
 
-    def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
+    async def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
         """Process program logs and extract token info."""
         
         # Check if this is a token creation
@@ -48,8 +55,8 @@ class LogsEventProcessor:
                     parsed_data = self._parse_create_instruction(decoded_data)
                     
                     if parsed_data and "name" in parsed_data:
-                        # Extract creator buy amount from JSON logs
-                        creator_token_amount = self._extract_creator_buy_amount(logs)
+                        # Extract creator buy amount using getTransaction
+                        creator_token_amount = await self._get_creator_initial_buy_amount(signature)
                         
                         mint = Pubkey.from_string(parsed_data["mint"])
                         bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
@@ -89,6 +96,73 @@ class LogsEventProcessor:
                     logger.debug(f"Failed to parse buy log: {e}")
         return 0.0
 
+    # Add this method after line 95 (after _extract_creator_buy_amount):
+    async def _get_creator_initial_buy_amount(self, signature: str) -> float:
+        """Get the creator's initial buy amount by fetching and decoding the actual transaction."""
+        try:
+            rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
+            if not rpc_endpoint:
+                logger.error("SOLANA_NODE_RPC_ENDPOINT not set")
+                return 0.0
+                
+            async with AsyncClient(rpc_endpoint) as client:
+                # Add retry logic for transaction indexing
+                for attempt in range(3):
+                    try:
+                        tx_response = await client.get_transaction(
+                            signature, 
+                            encoding="base64",
+                            max_supported_transaction_version=0
+                        )
+                        
+                        if tx_response.value and tx_response.value.transaction:
+                            break
+                            
+                        if attempt < 2:
+                            await asyncio.sleep(0.5)  # Wait for transaction to be indexed
+                            
+                    except Exception as e:
+                        if attempt < 2:
+                            await asyncio.sleep(0.5)
+                            continue
+                        logger.debug(f"Failed to get transaction {signature}: {e}")
+                        return 0.0
+                
+                if not tx_response.value or not tx_response.value.transaction:
+                    return 0.0
+                    
+                transaction = tx_response.value.transaction
+                
+                from solders.transaction import VersionedTransaction
+                
+                if isinstance(transaction.message, str):
+                    tx_data = base64.b64decode(transaction.message)
+                    versioned_tx = VersionedTransaction.from_bytes(tx_data)
+                else:
+                    versioned_tx = transaction
+                    
+                # Look for Buy instructions in the transaction
+                for ix in versioned_tx.message.instructions:
+                    program_id = str(versioned_tx.message.account_keys[ix.program_id_index])
+                    
+                    if program_id == str(self.pump_program):
+                        ix_data = bytes(ix.data)
+                        
+                        if len(ix_data) >= 16:  # Need at least 16 bytes for discriminator + amount
+                            discriminator = struct.unpack("<Q", ix_data[:8])[0]
+                            
+                            if discriminator == self.BUY_DISCRIMINATOR:
+                                token_amount_raw = struct.unpack("<Q", ix_data[8:16])[0]
+                                token_amount = token_amount_raw / 1_000_000
+                                
+                                logger.info(f"Found creator buy amount: {token_amount:,.2f} tokens")
+                                return token_amount
+                                
+        except Exception as e:
+            logger.debug(f"Failed to get creator buy amount: {e}")
+            
+        return 0.0
+
     def _parse_create_instruction(self, data: bytes) -> dict | None:
         """Parse the create instruction data.
 
@@ -104,7 +178,6 @@ class LogsEventProcessor:
         # Check for the correct instruction discriminator
         discriminator = struct.unpack("<Q", data[:8])[0]
         if discriminator != self.CREATE_DISCRIMINATOR:
-            logger.info(f"Skipping non-Create instruction with discriminator: {discriminator}")
             return None
 
         offset = 8
