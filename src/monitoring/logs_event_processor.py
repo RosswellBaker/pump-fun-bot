@@ -26,12 +26,9 @@ class LogsEventProcessor:
     BUY_DISCRIMINATOR: Final[int] = 17177263679997991869
 
     def __init__(self, pump_program: Pubkey):
-        """Initialize event processor.
-
-        Args:
-            pump_program: Pump.fun program address
-        """
         self.pump_program = pump_program
+        # Add this line for state management
+        self.pending_creations = {}
 
     def process_program_logs(self, logs: list[str], signature: str) -> TokenInfo | None:
         """Process program logs and extract token info.
@@ -43,63 +40,77 @@ class LogsEventProcessor:
         Returns:
             TokenInfo if a token creation is found, None otherwise
         """
-        # Check if this is a token creation
-        if not any("Program log: Instruction: Create" in log for log in logs):
-            return None
         
-        # Skip swaps as the first condition may pass them
-        if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
-            return None
+        # Check for Create instruction
+        if any("Program log: Instruction: Create" in log for log in logs):
+            # Skip swaps as the first condition may pass them
+            if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
+                return None
 
-        # Find and process program data
-        for log in logs:
-            if "Program data:" in log:
-                try:
-                    encoded_data = log.split(": ")[1]
-                    decoded_data = base64.b64decode(encoded_data)
-                    parsed_data = self._parse_create_instruction(decoded_data)
-                    
-                    if parsed_data and "name" in parsed_data:
-                        mint = Pubkey.from_string(parsed_data["mint"])
-                        bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
-                        associated_curve = self._find_associated_bonding_curve(
-                            mint, bonding_curve
-                        )
-                        creator = Pubkey.from_string(parsed_data["creator"])
-                        creator_vault = self._find_creator_vault(creator)
+            # Find and process program data
+            for log in logs:
+                if "Program data:" in log:
+                    try:
+                        encoded_data = log.split(": ")[1]
+                        decoded_data = base64.b64decode(encoded_data)
+                        parsed_data = self._parse_create_instruction(decoded_data)
                         
-                        # Add this block to extract creator's buy amount
-                        creator_token_amount = 0
-                        for log_line in logs:
-                            # Target the specific log containing the JSON trade data
-                            if "Pump.fun: anchor Self CPI Log" in log_line and '"isBuy":true' in log_line:
-                                try:
-                                    # Pass the entire log line to the new parser
-                                    buy_parsed = self._parse_buy_instruction(log_line)
-                                    if buy_parsed and "amount" in buy_parsed:
-                                        creator_token_amount = buy_parsed["amount"]
-                                        logger.info(f"Found creator buy amount: {creator_token_amount:,.2f} tokens")
-                                        break  # Found the buy, exit the loop
-                                except Exception as e:
-                                    logger.debug(f"Failed to parse potential buy log: {e}")
-                                    continue
-                                # Found a Buy instruction and processed it (or tried to), no need to look further
+                        if parsed_data and "name" in parsed_data:
+                            # Store the creation data and wait for the buy instruction
+                            self.pending_creations[signature] = parsed_data
+                            logger.debug(f"Stored pending creation for {parsed_data['symbol']} with sig {signature}")
+                            return None  # Wait for buy log before returning TokenInfo
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to process log data: {e}")
+        
+        # Check for Buy instruction log (arrives separately)
+        elif any("Pump.fun: anchor Self CPI Log" in log for log in logs):
+            # If we have a pending creation for this signature
+            if signature in self.pending_creations:
+                creator_token_amount = 0
+                
+                # Parse the buy amount from the JSON log
+                for log_line in logs:
+                    if "Pump.fun: anchor Self CPI Log" in log_line and '"isBuy":true' in log_line:
+                        try:
+                            buy_parsed = self._parse_buy_instruction(log_line)
+                            if buy_parsed and "amount" in buy_parsed:
+                                creator_token_amount = buy_parsed["amount"]
+                                logger.info(f"Found creator buy amount: {creator_token_amount:,.2f} tokens")
                                 break
-
-                        return TokenInfo(
-                            name=parsed_data["name"],
-                            symbol=parsed_data["symbol"],
-                            uri=parsed_data["uri"],
-                            mint=mint,
-                            bonding_curve=bonding_curve,
-                            associated_bonding_curve=associated_curve,
-                            user=Pubkey.from_string(parsed_data["user"]),
-                            creator=creator,
-                            creator_vault=creator_vault,
-                            creator_token_amount=creator_token_amount,  # Add this field
-                        )
-                except Exception as e:
-                    logger.error(f"Failed to process log data: {e}")
+                        except Exception as e:
+                            logger.debug(f"Failed to parse potential buy log: {e}")
+                            continue
+                
+                # Retrieve the stored creation data and remove from pending
+                parsed_data = self.pending_creations.pop(signature)
+                
+                # Create the complete TokenInfo object
+                mint = Pubkey.from_string(parsed_data["mint"])
+                bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
+                associated_curve = self._find_associated_bonding_curve(mint, bonding_curve)
+                creator = Pubkey.from_string(parsed_data["creator"])
+                creator_vault = self._find_creator_vault(creator)
+                
+                return TokenInfo(
+                    name=parsed_data["name"],
+                    symbol=parsed_data["symbol"],
+                    uri=parsed_data["uri"],
+                    mint=mint,
+                    bonding_curve=bonding_curve,
+                    associated_bonding_curve=associated_curve,
+                    user=Pubkey.from_string(parsed_data["user"]),
+                    creator=creator,
+                    creator_vault=creator_vault,
+                    creator_token_amount=creator_token_amount,
+                )
+        
+        # Clean up old pending creations (prevent memory leaks)
+        if len(self.pending_creations) > 100:
+            oldest_sig = next(iter(self.pending_creations))
+            del self.pending_creations[oldest_sig]
+            logger.warning(f"Cleaned up old pending creation for sig: {oldest_sig}")
         
         return None
 
