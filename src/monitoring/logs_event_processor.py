@@ -64,7 +64,6 @@ class LogsEventProcessor:
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
                         
-                        # Fix this return statement by adding a missing closing parenthesis
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -75,9 +74,9 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-                            creator_token_amount=self._get_creator_initial_buy_amount_sync(
+			                creator_token_amount=self._get_creator_initial_buy_amount_sync(
                                 signature, str(mint), str(creator)
-                            )  # Add closing parenthesis here
+                            )
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
