@@ -185,12 +185,20 @@ class LogsEventProcessor:
                 logger.error("SOLANA_NODE_RPC_ENDPOINT not set in environment")
                 return 0.0
                 
-            # Use synchronous client instead of async
+            # Use synchronous client
             from solana.rpc.api import Client
             client = Client(rpc_endpoint)
             
+            # CRITICAL FIX: Convert string to Signature object
+            from solders.signature import Signature
+            try:
+                signature = Signature.from_string(tx_signature)
+            except Exception as e:
+                logger.error(f"Failed to convert signature '{tx_signature}': {e}")
+                return 0.0
+            
             # Get transaction with token balance info
-            tx_response = client.get_transaction(tx_signature)
+            tx_response = client.get_transaction(signature)
             
             # Check if we received a valid response
             if not tx_response.value or not tx_response.value.transaction.meta:
@@ -209,10 +217,9 @@ class LogsEventProcessor:
                     logger.info(f"Found creator balance: {amount} tokens")
                     return amount
                     
-            # If we get here, no matching balance was found
             logger.info(f"No token balance found for creator {creator_address[:8]}... and mint {mint_address[:8]}...")
             return 0.0
                     
         except Exception as e:
-            logger.error(f"Error getting creator buy amount: {e}")
+            logger.error(f"Error getting creator buy amount: {str(e)}")
             return 0.0
