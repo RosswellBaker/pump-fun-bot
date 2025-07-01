@@ -80,15 +80,6 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
 
-                            if (
-                                creator_initial_buy_max is not None 
-                                and token_info.creator_token_amount > creator_initial_buy_max
-                            ):
-                                logger.info(
-                                    f"Token {token_info.symbol} skipped: creator bought too many tokens ({token_info.creator_token_amount})"
-                                )
-                                continue
-
                             await token_callback(token_info)
 
                     except websockets.exceptions.ConnectionClosed:

@@ -394,6 +394,15 @@ class PumpTrader:
                     token_key, current_time
                 )
 
+                # Add creator initial buy filter check
+                if (self.creator_initial_buy_max is not None and 
+                    token_info.creator_token_amount > self.creator_initial_buy_max):
+                    logger.info(
+                        f"Token {token_info.symbol} skipped: creator bought too many tokens "
+                        f"({token_info.creator_token_amount:,.0f} > {self.creator_initial_buy_max:,})"
+                    )
+                    continue
+
                 if token_age > self.max_token_age:
                     logger.info(
                         f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
@@ -425,15 +434,7 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-            # Add creator initial buy filter check
-            if (self.creator_initial_buy_max is not None and 
-                token_info.creator_token_amount > self.creator_initial_buy_max):
-                logger.info(
-                    f"Token {token_info.symbol} skipped: creator bought too many tokens "
-                    f"({token_info.creator_token_amount:,.0f} > {self.creator_initial_buy_max:,})"
-                )
-                return
-            
+           
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
             if not self.extreme_fast_mode:
                 # Save token info to file
