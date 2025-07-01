@@ -26,6 +26,7 @@ class TokenInfo:
     creator: Pubkey
     creator_vault: Pubkey
     creator_token_amount: float = 0.0
+    signature: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TokenInfo":

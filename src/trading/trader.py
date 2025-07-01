@@ -10,6 +10,8 @@ from datetime import datetime
 from time import monotonic
 
 from solders.pubkey import Pubkey
+from solders.signature import Signature  # Add this import
+from solana.rpc.api import Client 
 
 from cleanup.modes import (
     handle_cleanup_after_failure,
@@ -423,6 +425,15 @@ class PumpTrader:
             token_info: Token information
         """
         try:
+            # Add creator initial buy filter check
+            if (self.creator_initial_buy_max is not None and 
+                token_info.creator_token_amount > self.creator_initial_buy_max):
+                logger.info(
+                    f"Token {token_info.symbol} skipped: creator bought too many tokens "
+                    f"({token_info.creator_token_amount:,.0f} > {self.creator_initial_buy_max:,})"
+                )
+                return
+            
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
             if not self.extreme_fast_mode:
                 # Save token info to file

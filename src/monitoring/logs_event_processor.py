@@ -2,11 +2,9 @@ import base64
 import struct
 from typing import Final
 import os
-import json
 
 import base58
 from solders.pubkey import Pubkey
-from solana.rpc.async_api import AsyncClient
 
 from core.pubkeys import PumpAddresses, SystemAddresses
 from trading.base import TokenInfo
@@ -74,9 +72,8 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-			                creator_token_amount=self._get_creator_initial_buy_amount_sync(
-                                signature, str(mint), str(creator)
-                            )
+			                creator_token_amount=0.0,
+                            signature=signature
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
