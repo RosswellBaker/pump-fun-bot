@@ -199,7 +199,7 @@ class LogsEventProcessor:
             # Get transaction - FIXED! Pass as opts dictionary
             tx_response = client.get_transaction(
                 signature,
-                opts={"maxSupportedTransactionVersion": 0}  # THIS IS THE CORRECT FORMAT
+                maxSupportedTransactionVersion=0  # Direct keyword argument
             )
             
             # Check if we received a valid response
