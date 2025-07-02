@@ -219,10 +219,19 @@ class LogsEventProcessor:
                     # Debug the structure to understand what we're working with
                     logger.debug(f"Found creator balance, extracting amount...")
                     
-                    # CRITICAL FIX: Handle nested structure in ui_token_amount
+                    # Access pattern for solders SDK UiTokenAmount structure
                     if hasattr(balance, 'ui_token_amount'):
-                        # The correct path to access amount in solders SDK
-                        return float(balance.ui_token_amount.ui_amount or 0.0)
+                        # Debug exact object structure
+                        logger.debug(f"UI Token Amount keys: {dir(balance.ui_token_amount)}")
+                        
+                        # In the solders SDK, amount is stored as string in the amount field
+                        if hasattr(balance.ui_token_amount, 'amount'):
+                            amount_str = balance.ui_token_amount.amount
+                            try:
+                                return float(amount_str)
+                            except (ValueError, TypeError):
+                                logger.warning(f"Could not convert amount '{amount_str}' to float")
+                                return 0.0
                     
                     logger.warning(f"Could not extract token amount from balance")
                     return 0.0
