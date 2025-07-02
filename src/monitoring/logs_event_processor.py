@@ -188,7 +188,7 @@ class LogsEventProcessor:
             from solana.rpc.api import Client
             client = Client(rpc_endpoint)
             
-            # CRITICAL FIX: Convert string to Signature object
+            # Convert string to Signature object
             from solders.signature import Signature
             try:
                 signature = Signature.from_string(tx_signature)
@@ -196,13 +196,16 @@ class LogsEventProcessor:
                 logger.error(f"Failed to convert signature '{tx_signature}': {e}")
                 return 0.0
             
-            # Get transaction with token balance info
-            tx_response = client.get_transaction(signature)
-            
-            # Check if we received a valid response
-            if not tx_response.value or not tx_response.value.transaction.meta:
-                logger.warning(f"Could not get transaction data for {tx_signature}")
-                return 0.0
+            # Get transaction - TRY CORRECT VERSION PARAMETER FORMAT
+            try:
+                tx_response = client.get_transaction(signature, maxSupportedTransactionVersion=0)
+            except Exception as first_error:
+                try:
+                    # Try alternative format if first fails
+                    tx_response = client.get_transaction(signature, {"maxSupportedTransactionVersion": 0})
+                except Exception as second_error:
+                    logger.error(f"Failed to get transaction: {second_error}")
+                    return 0.0
             
             # Extract post token balances
             meta = tx_response.value.transaction.meta
