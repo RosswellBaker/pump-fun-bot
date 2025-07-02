@@ -55,7 +55,7 @@ filters:
   max_token_age: 0.4 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
-  creator_initial_buy_max: 50000000 # Set your threshold here
+  creator_initial_buy_max: 50000000 # 50 million tokens
 
 # Retry and timeout settings
 retries:
