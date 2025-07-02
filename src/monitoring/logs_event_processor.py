@@ -196,10 +196,10 @@ class LogsEventProcessor:
                 logger.error(f"Failed to convert signature '{tx_signature}': {e}")
                 return 0.0
             
-            # Get transaction with proper versioning parameter
+            # Get transaction with proper versioning parameter - use direct dictionary parameter
             tx_response = client.get_transaction(
                 signature,
-                max_supported_transaction_version=0
+                {"maxSupportedTransactionVersion": 0}  # Pass as direct dictionary
             )
             
             # Check if we received a valid response
@@ -238,7 +238,7 @@ class LogsEventProcessor:
                         
             logger.debug(f"No token balance found for creator {creator_address[:8]}...")
             return 0.0
-                        
+                    
         except Exception as e:
             logger.error(f"Error getting creator buy amount: {e}")
             return 0.0
