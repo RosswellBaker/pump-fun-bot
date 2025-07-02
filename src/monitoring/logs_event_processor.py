@@ -198,7 +198,6 @@ class LogsEventProcessor:
             
             tx_response = None
             try:
-                # We MUST use jsonParsed to have the RPC decode the inner instructions for us.
                 tx_response = client.get_transaction(signature, encoding="jsonParsed", max_supported_transaction_version=0)
             except Exception as e:
                 logger.error(f"Failed to get transaction {tx_signature}. Error: {e}")
@@ -210,7 +209,6 @@ class LogsEventProcessor:
 
             meta = tx_response.value.transaction.meta
             
-            # Step 1: Find token decimals. This is crucial for scaling.
             decimals = None
             if meta.post_token_balances:
                 for balance in meta.post_token_balances:
@@ -222,7 +220,6 @@ class LogsEventProcessor:
                 logger.warning(f"Could not determine token decimals for mint {mint_address} in tx {tx_signature}. Cannot calculate initial buy.")
                 return 0.0
 
-            # Step 2: Sum all transfers FROM the bonding curve's vault in the inner instructions.
             total_buy_amount_raw = 0
             if not meta.inner_instructions:
                 logger.warning(f"No inner instructions found for {tx_signature}, cannot determine initial buy.")
@@ -241,7 +238,6 @@ class LogsEventProcessor:
                         info = parsed_ix.get("info", {})
                         source = info.get("source")
                         
-                        # This is the key check: are tokens coming FROM the bonding curve's vault?
                         if source == associated_curve_address:
                             try:
                                 amount_raw = int(info.get("amount", "0"))
@@ -253,7 +249,6 @@ class LogsEventProcessor:
                 logger.debug(f"No initial buy detected from bonding curve for tx {tx_signature[:6]}")
                 return 0.0
 
-            # Step 3: Scale the total raw amount using the decimals to get the real number.
             scaled_amount = total_buy_amount_raw / (10 ** decimals)
             logger.info(f"Detected total initial buy of {scaled_amount:,.2f} tokens from bonding curve in tx {tx_signature[:6]}...")
             
