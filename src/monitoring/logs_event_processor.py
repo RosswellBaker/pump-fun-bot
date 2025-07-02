@@ -199,7 +199,7 @@ class LogsEventProcessor:
             # Get transaction - FIXED! Pass as opts dictionary
             tx_response = client.get_transaction(
                 signature,
-                maxSupportedTransactionVersion=0  # Direct keyword argument
+                max_supported_transaction_version=0
             )
             
             # Check if we received a valid response
@@ -216,10 +216,10 @@ class LogsEventProcessor:
                 if (str(balance.mint) == mint_address and 
                     str(balance.owner) == creator_address):
                     amount = balance.ui_amount or 0.0
-                    logger.info(f"Found creator balance: {amount} tokens")
+                    logger.debug(f"Found creator balance: {amount} tokens")
                     return amount
                     
-            logger.info(f"No token balance found for creator {creator_address[:8]}...")
+            logger.debug(f"No token balance found for creator {creator_address[:8]}...")
             return 0.0
                     
         except Exception as e:
