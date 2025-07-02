@@ -176,7 +176,7 @@ class LogsEventProcessor:
         return derived_address
         
     def _get_creator_initial_buy_amount_sync(self, tx_signature: str, mint_address: str, creator_address: str) -> float:
-        """Get creator's initial buy amount synchronously."""
+        """Get creator's initial purchase amount for a newly minted token."""
         try:
             # Get the RPC endpoint from environment
             rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
@@ -196,7 +196,7 @@ class LogsEventProcessor:
                 logger.error(f"Failed to convert signature '{tx_signature}': {e}")
                 return 0.0
             
-            # Get transaction - FIXED! Pass as opts dictionary
+            # Get transaction with proper versioning parameter
             tx_response = client.get_transaction(
                 signature,
                 max_supported_transaction_version=0
@@ -215,13 +215,21 @@ class LogsEventProcessor:
             for balance in post_balances or []:
                 if (str(balance.mint) == mint_address and 
                     str(balance.owner) == creator_address):
-                    amount = balance.ui_amount or 0.0
-                    logger.debug(f"Found creator balance: {amount} tokens")
-                    return amount
                     
+                    # Debug the structure to understand what we're working with
+                    logger.debug(f"Found creator balance, extracting amount...")
+                    
+                    # CRITICAL FIX: Handle nested structure in ui_token_amount
+                    if hasattr(balance, 'ui_token_amount'):
+                        # The correct path to access amount in solders SDK
+                        return float(balance.ui_token_amount.ui_amount or 0.0)
+                    
+                    logger.warning(f"Could not extract token amount from balance")
+                    return 0.0
+                        
             logger.debug(f"No token balance found for creator {creator_address[:8]}...")
             return 0.0
-                    
+                        
         except Exception as e:
             logger.error(f"Error getting creator buy amount: {e}")
             return 0.0
