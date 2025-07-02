@@ -72,7 +72,9 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-			                creator_token_amount=0.0,
+			                creator_token_amount=self._get_creator_initial_buy_amount_sync(
+                                signature, str(mint), str(creator)
+                            ),
                             signature=signature
                         )
                 except Exception as e:
