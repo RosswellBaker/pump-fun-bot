@@ -56,12 +56,18 @@ class LogsEventProcessor:
                     if parsed_data and "name" in parsed_data:
                         mint = Pubkey.from_string(parsed_data["mint"])
                         bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
+                        # This is the bonding curve's token vault address
                         associated_curve = self._find_associated_bonding_curve(
                             mint, bonding_curve
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
                         
+                        # This is our separate function call to capture the amount
+                        initial_buy_amount = self._get_creator_initial_buy_amount_sync(
+                            signature, str(mint), str(associated_curve)
+                        )
+
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -72,9 +78,7 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-			                creator_token_amount=self._get_creator_initial_buy_amount_sync(
-                                signature, str(mint), str(creator)
-                            ),
+                            creator_token_amount=initial_buy_amount, # Store the result
                             signature=signature
                         )
                 except Exception as e:
@@ -175,70 +179,86 @@ class LogsEventProcessor:
         )
         return derived_address
         
-    def _get_creator_initial_buy_amount_sync(self, tx_signature: str, mint_address: str, creator_address: str) -> float:
-        """Get creator's initial purchase amount for a newly minted token."""
+    def _get_creator_initial_buy_amount_sync(self, tx_signature: str, mint_address: str, associated_curve_address: str) -> float:
+        """
+        Calculates the creator's total initial buy amount by analyzing inner instructions
+        to correctly handle bundling within the same transaction. This is the definitive method.
+        """
         try:
-            # Get the RPC endpoint from environment
             rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
             if not rpc_endpoint:
                 logger.error("SOLANA_NODE_RPC_ENDPOINT not set in environment")
                 return 0.0
                 
-            # Use synchronous client
             from solana.rpc.api import Client
             client = Client(rpc_endpoint)
             
-            # Convert string to Signature object
             from solders.signature import Signature
+            signature = Signature.from_string(tx_signature)
+            
+            tx_response = None
             try:
-                signature = Signature.from_string(tx_signature)
+                # We MUST use jsonParsed to have the RPC decode the inner instructions for us.
+                tx_response = client.get_transaction(signature, encoding="jsonParsed", max_supported_transaction_version=0)
             except Exception as e:
-                logger.error(f"Failed to convert signature '{tx_signature}': {e}")
+                logger.error(f"Failed to get transaction {tx_signature}. Error: {e}")
                 return 0.0
-            
-            # Get transaction with proper versioning parameter - use direct dictionary parameter
-            tx_response = client.get_transaction(
-                signature,
-                {"maxSupportedTransactionVersion": 0}  # Pass as direct dictionary
-            )
-            
-            # Check if we received a valid response
-            if not tx_response.value or not tx_response.value.transaction.meta:
-                logger.warning(f"Could not get transaction data for {tx_signature}")
+
+            if not tx_response or not tx_response.value or not tx_response.value.transaction or not tx_response.value.transaction.meta:
+                logger.warning(f"Could not get transaction meta for {tx_signature}")
                 return 0.0
-            
-            # Extract post token balances
+
             meta = tx_response.value.transaction.meta
-            post_balances = meta.post_token_balances
             
-            # Find the creator's token balance for this mint
-            for balance in post_balances or []:
-                if (str(balance.mint) == mint_address and 
-                    str(balance.owner) == creator_address):
-                    
-                    # Debug the structure to understand what we're working with
-                    logger.debug(f"Found creator balance, extracting amount...")
-                    
-                    # Access pattern for solders SDK UiTokenAmount structure
-                    if hasattr(balance, 'ui_token_amount'):
-                        # Debug exact object structure
-                        logger.debug(f"UI Token Amount keys: {dir(balance.ui_token_amount)}")
+            # Step 1: Find token decimals. This is crucial for scaling.
+            decimals = None
+            if meta.post_token_balances:
+                for balance in meta.post_token_balances:
+                    if str(balance.mint) == mint_address:
+                        decimals = balance.ui_token_amount.decimals
+                        break
+            
+            if decimals is None:
+                logger.warning(f"Could not determine token decimals for mint {mint_address} in tx {tx_signature}. Cannot calculate initial buy.")
+                return 0.0
+
+            # Step 2: Sum all transfers FROM the bonding curve's vault in the inner instructions.
+            total_buy_amount_raw = 0
+            if not meta.inner_instructions:
+                logger.warning(f"No inner instructions found for {tx_signature}, cannot determine initial buy.")
+                return 0.0
+
+            for instruction_group in meta.inner_instructions:
+                for inner_ix in instruction_group.instructions:
+                    if not hasattr(inner_ix, "parsed"):
+                        continue
+
+                    parsed_ix = inner_ix.parsed
+                    if (isinstance(parsed_ix, dict) and
+                        parsed_ix.get("type") == "transfer" and
+                        inner_ix.program == "spl-token"):
+
+                        info = parsed_ix.get("info", {})
+                        source = info.get("source")
                         
-                        # In the solders SDK, amount is stored as string in the amount field
-                        if hasattr(balance.ui_token_amount, 'amount'):
-                            amount_str = balance.ui_token_amount.amount
+                        # This is the key check: are tokens coming FROM the bonding curve's vault?
+                        if source == associated_curve_address:
                             try:
-                                return float(amount_str)
+                                amount_raw = int(info.get("amount", "0"))
+                                total_buy_amount_raw += amount_raw
                             except (ValueError, TypeError):
-                                logger.warning(f"Could not convert amount '{amount_str}' to float")
-                                return 0.0
-                    
-                    logger.warning(f"Could not extract token amount from balance")
-                    return 0.0
-                        
-            logger.debug(f"No token balance found for creator {creator_address[:8]}...")
-            return 0.0
+                                logger.warning(f"Could not parse amount from inner instruction: {info}")
+
+            if total_buy_amount_raw == 0:
+                logger.debug(f"No initial buy detected from bonding curve for tx {tx_signature[:6]}")
+                return 0.0
+
+            # Step 3: Scale the total raw amount using the decimals to get the real number.
+            scaled_amount = total_buy_amount_raw / (10 ** decimals)
+            logger.info(f"Detected total initial buy of {scaled_amount:,.2f} tokens from bonding curve in tx {tx_signature[:6]}...")
+            
+            return scaled_amount
                     
         except Exception as e:
-            logger.error(f"Error getting creator buy amount: {e}")
+            logger.error(f"Critical error in _get_creator_initial_buy_amount_sync: {e}")
             return 0.0

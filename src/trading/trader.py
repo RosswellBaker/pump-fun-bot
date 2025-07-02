@@ -386,49 +386,43 @@ class PumpTrader:
         while True:
             try:
                 token_info = await self.token_queue.get()
-                
-                try:  # Inner try to ensure task_done is always called
-                    token_key = str(token_info.mint)
-                    
-                    # Check if token is still "fresh"
-                    current_time = monotonic()
-                    token_age = current_time - self.token_timestamps.get(
-                        token_key, current_time
+                token_key = str(token_info.mint)
+
+                # Check if token is still "fresh"
+                current_time = monotonic()
+                token_age = current_time - self.token_timestamps.get(
+                    token_key, current_time
+                )
+
+                if token_age > self.max_token_age:
+                    logger.info(
+                        f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
                     )
-                    
-                    # Flag-based approach instead of continue
-                    should_process = True
-                    
-                    # Creator initial buy filter check
-                    if (self.creator_initial_buy_max is not None and 
-                        token_info.creator_token_amount > self.creator_initial_buy_max):
+                    continue
+
+                # ADDED: This is our filter logic. It's simple and non-disruptive.
+                if self.creator_initial_buy_max is not None and token_info.creator_token_amount is not None:
+                    if token_info.creator_token_amount > self.creator_initial_buy_max:
                         logger.info(
                             f"Token {token_info.symbol} skipped: creator bought too many tokens "
-                            f"({token_info.creator_token_amount:,.0f} > {self.creator_initial_buy_max:,})"
+                            f"({token_info.creator_token_amount:,.2f} > {self.creator_initial_buy_max:,})"
                         )
-                        should_process = False
-                    
-                    elif token_age > self.max_token_age:
-                        logger.info(
-                            f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
-                        )
-                        should_process = False
-                    
-                    if should_process:
-                        self.processed_tokens.add(token_key)
-                        
-                        logger.info(f"Processing fresh token: {token_info.symbol} (age: {token_age:.1f}s)")
-                        await self._handle_token(token_info)
-                    
-                finally:
-                    # Always execute task_done exactly once per token
-                    self.token_queue.task_done()
-                    
+                        continue
+
+                self.processed_tokens.add(token_key)
+
+                logger.info(
+                    f"Processing fresh token: {token_info.symbol} (age: {token_age:.1f}s)"
+                )
+                await self._handle_token(token_info)
+
             except asyncio.CancelledError:
                 logger.info("Token queue processor was cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in token queue processor: {e!s}")
+            finally:
+                self.token_queue.task_done()
 
     async def _handle_token(
         self, token_info: TokenInfo
