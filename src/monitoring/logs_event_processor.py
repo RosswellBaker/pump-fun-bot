@@ -5,10 +5,8 @@ import os
 
 import base58
 from solders.pubkey import Pubkey
-from solders.signature import Signature
-from solana.rpc.api import Client
 
-from core.pubkeys import PumpAddresses, SystemAddresses
+from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
 from trading.base import TokenInfo
 from utils.logger import get_logger
 
@@ -48,9 +46,6 @@ class LogsEventProcessor:
         # Skip swaps as the first condition may pass them
         if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
             return None
-        
-        # Get the creator's buy amount ONCE at the start, using the correct function you already have.
-        initial_buy_amount = self._get_initial_buy_for_filter(signature)
 
         # Find and process program data
         for log in logs:
@@ -69,6 +64,8 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
+
+                        initial_buy_amount = self._get_buy_amount_from_logs(logs)
                        
                         return TokenInfo(
                             name=parsed_data["name"],
@@ -137,6 +134,37 @@ class LogsEventProcessor:
         except Exception as e:
             logger.error(f"Failed to parse create instruction: {e}")
             return None
+
+    def _get_buy_amount_from_logs(self, logs: list[str]) -> float | None:
+        """
+        New, efficient filter function that parses the creator's buy amount
+        directly from the log data, avoiding any extra RPC calls.
+        """
+        for log in logs:
+            if "Program data:" not in log:
+                continue
+            
+            try:
+                encoded_data = log.split(": ")[1]
+                decoded_data = base64.b64decode(encoded_data)
+
+                if len(decoded_data) < 8:
+                    continue
+
+                discriminator = struct.unpack("<Q", decoded_data[:8])[0]
+                if discriminator == self.BUY_DISCRIMINATOR:
+                    if len(decoded_data) < 16:
+                        continue
+                    
+                    token_amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+                    scaled_amount = token_amount_raw / (10**TOKEN_DECIMALS)
+                    
+                    logger.debug(f"Filter function successfully parsed creator buy of {scaled_amount:,.2f} from logs.")
+                    return scaled_amount
+            except Exception:
+                continue
+        
+        return None
 
     def _find_associated_bonding_curve(
         self, mint: Pubkey, bonding_curve: Pubkey
