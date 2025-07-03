@@ -45,6 +45,9 @@ class LogsEventProcessor:
         # Skip swaps as the first condition may pass them
         if any("Program log: Instruction: CreateTokenAccount" in log for log in logs):
             return None
+        
+        # Get the creator's buy amount ONCE at the start, using the correct function you already have.
+        initial_buy_amount, _ = self._get_amount_from_buy_instruction(signature)
 
         # Find and process program data
         for log in logs:
@@ -63,10 +66,7 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-                        
-                        # Get the creator's buy amount ONCE at the start, using the correct function you already have.
-                        initial_buy_amount, _ = self._get_amount_from_buy_instruction(signature)
-
+                       
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
