@@ -80,6 +80,7 @@ class LogsListener(BaseTokenListener):
                                 )
                                 continue
                             
+                            # Corrected filter logic
                             if creator_initial_buy_max is not None and token_info.creator_token_amount is not None:
                                 if token_info.creator_token_amount > creator_initial_buy_max:
                                     logger.info(
