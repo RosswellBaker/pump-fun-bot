@@ -31,7 +31,7 @@ def get_logger(name: str, level: int = logging.DEBUG) -> logging.Logger:
 
 
 def setup_file_logging(
-    filename: str = "pump_trading.log", level: int = logging.INFO
+    filename: str = "pump_trading.log", level: int = logging.DEBUG
 ) -> None:
     """Set up file logging for all loggers.
 
