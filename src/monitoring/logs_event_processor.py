@@ -5,6 +5,8 @@ import os
 
 import base58
 from solders.pubkey import Pubkey
+from solders.signature import Signature
+from solana.rpc.api import Client
 
 from core.pubkeys import PumpAddresses, SystemAddresses
 from trading.base import TokenInfo
@@ -188,28 +190,25 @@ class LogsEventProcessor:
             rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
             if not rpc_endpoint: return None, None
                 
-            from solana.rpc.api import Client
             client = Client(rpc_endpoint)
-            from solders.signature import Signature
             tx_response = client.get_transaction(Signature.from_string(tx_signature), encoding="jsonParsed", max_supported_transaction_version=0)
 
             if not tx_response or not tx_response.value or not tx_response.value.transaction:
                 return None, None
             
-            # CORRECTED: This is the official discriminator for the 'buy' instruction from the pump.fun IDL.
-            BUY_DISCRIMINATOR = 16927863322537952870
             tx = tx_response.value.transaction.transaction
             meta = tx_response.value.transaction.meta
 
             for ix in tx.message.instructions:
                 if str(ix.program_id) == str(PumpAddresses.PROGRAM):
-                    # Add padding to handle improperly padded base64 strings from the RPC node.
+                    # Research-based fix: Add padding to handle improperly padded base64 strings from the RPC node.
                     ix_data_str = ix.data
                     ix_data_str += "=" * (-len(ix_data_str) % 4)
                     
                     ix_data = base64.b64decode(ix_data_str)
                     
-                    if len(ix_data) >= 16 and struct.unpack("<Q", ix_data[:8])[0] == BUY_DISCRIMINATOR:
+                    # Check for the correct instruction discriminator
+                    if len(ix_data) >= 16 and struct.unpack("<Q", ix_data[:8])[0] == self.BUY_DISCRIMINATOR:
                         token_amount_raw = struct.unpack("<Q", ix_data[8:16])[0]
                         if len(ix.accounts) < 3: continue
                         # The mint address is the 3rd account in the 'buy' instruction's account list.
