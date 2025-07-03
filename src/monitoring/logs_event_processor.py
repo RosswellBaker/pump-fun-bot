@@ -181,21 +181,21 @@ class LogsEventProcessor:
         )
         return derived_address
         
-    def _get_amount_from_buy_instruction(self, tx_signature: str) -> tuple[float | None, str | None]:
+    def _get_initial_buy_for_filter(self, tx_signature: str) -> float | None:
         """
-        Gets the creator's initial buy amount by parsing the raw 'buy' instruction data.
-        This version contains the definitive fix for the logical flaw that was causing the filter to be skipped.
+        New, non-disruptive function to get the creator's initial buy amount for filtering purposes.
+        It parses the raw 'buy' instruction data efficiently.
         """
         rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
         if not rpc_endpoint: 
-            return None, None
+            return None
         
         try:
             client = Client(rpc_endpoint)
             tx_response = client.get_transaction(Signature.from_string(tx_signature), encoding="jsonParsed", max_supported_transaction_version=0)
 
             if not tx_response or not tx_response.value or not tx_response.value.transaction:
-                return None, None
+                return None
             
             tx = tx_response.value.transaction.transaction
             meta = tx_response.value.transaction.meta
@@ -209,13 +209,12 @@ class LogsEventProcessor:
                     ix_data_str += "=" * (-len(ix_data_str) % 4)
                     ix_data = base64.b64decode(ix_data_str)
                     
-                    # THE DEFINITIVE FIX:
-                    # 1. Check that the instruction data is long enough for a discriminator.
-                    # 2. Unpack the discriminator.
-                    # 3. ONLY if it is the BUY_DISCRIMINATOR, proceed to parse the amount.
-                    # This prevents the code from crashing on 'create' instructions and ensures we find the 'buy'.
-                    if len(ix_data) >= 8 and struct.unpack("<Q", ix_data[:8])[0] == self.BUY_DISCRIMINATOR:
-                        
+                    if len(ix_data) < 8:
+                        continue
+                    
+                    discriminator = struct.unpack("<Q", ix_data[:8])[0]
+                    
+                    if discriminator == self.BUY_DISCRIMINATOR:
                         if len(ix_data) < 16:
                             continue
                         
@@ -237,15 +236,14 @@ class LogsEventProcessor:
                             continue
 
                         scaled_amount = token_amount_raw / (10 ** decimals)
-                        logger.info(f"Successfully parsed creator buy of {scaled_amount:,.2f} for tx {tx_signature[:6]}...")
-                        return scaled_amount, mint_address
+                        logger.info(f"Filter function successfully parsed creator buy of {scaled_amount:,.2f} for tx {tx_signature[:6]}...")
+                        return scaled_amount
 
                 except Exception:
-                    # If any instruction's data is malformed, ignore it and continue to the next one.
                     continue
             
-            return None, None
+            return None
             
         except Exception as e:
-            logger.error(f"A critical error occurred while fetching transaction {tx_signature}: {e}")
-            return None, None
+            logger.error(f"Filter function encountered a critical error while fetching transaction {tx_signature}: {e}")
+            return None
