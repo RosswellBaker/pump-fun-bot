@@ -88,11 +88,8 @@ class LogsListener(BaseTokenListener):
                                         f"({token_info.creator_token_amount:,.2f} > {creator_initial_buy_max:,})"
                                     )
                                     continue
-                                
-                                logger.info(
-                                    f"Token not created by {creator_address}. Skipping..."
-                                )
-                                continue
+                            
+                            # The two incorrect lines that were here have been removed.
 
                             await token_callback(token_info)
 
