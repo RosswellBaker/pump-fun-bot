@@ -27,7 +27,7 @@ from monitoring.block_listener import BlockListener
 from monitoring.geyser_listener import GeyserListener
 from monitoring.logs_listener import LogsListener
 from monitoring.pumpportal_listener import PumpPortalListener
-from trading.trader import LogsEventProcessor
+from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo, TradeResult
 from trading.buyer import TokenBuyer
 from trading.position import Position
@@ -180,7 +180,7 @@ class PumpTrader:
                 geyser_auth_type, 
                 PumpAddresses.PROGRAM
             )
-            logger.info("Using Geyser listener for token monitoring")
+            logger.debug("Using Geyser listener for token monitoring")
         elif listener_type == "logs":
             self.token_listener = LogsListener(wss_endpoint, PumpAddresses.PROGRAM)
             logger.info("Using logsSubscribe listener for token monitoring")
