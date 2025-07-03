@@ -37,7 +37,6 @@ class LogsListener(BaseTokenListener):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_initial_buy_max: int | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
