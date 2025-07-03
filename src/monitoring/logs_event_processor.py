@@ -143,7 +143,7 @@ class LogsEventProcessor:
         for log in logs:
             if "Program data:" not in log:
                 continue
-            
+        
             try:
                 encoded_data = log.split(": ")[1]
                 decoded_data = base64.b64decode(encoded_data)
@@ -155,15 +155,16 @@ class LogsEventProcessor:
                 if discriminator == self.BUY_DISCRIMINATOR:
                     if len(decoded_data) < 16:
                         continue
-                    
-                    token_amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                    scaled_amount = token_amount_raw / (10**TOKEN_DECIMALS)
-                    
+                
+                    # Extract the amount field (8 bytes, starting from index 8)
+                    amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+                    scaled_amount = amount_raw / (10**TOKEN_DECIMALS)
+                
                     logger.debug(f"Filter function successfully parsed creator buy of {scaled_amount:,.2f} from logs.")
                     return scaled_amount
             except Exception:
                 continue
-        
+    
         return None
 
     def _find_associated_bonding_curve(

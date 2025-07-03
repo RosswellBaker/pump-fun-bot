@@ -27,6 +27,7 @@ from monitoring.block_listener import BlockListener
 from monitoring.geyser_listener import GeyserListener
 from monitoring.logs_listener import LogsListener
 from monitoring.pumpportal_listener import PumpPortalListener
+from src.trading.trader import LogsEventProcessor
 from trading.base import TokenInfo, TradeResult
 from trading.buyer import TokenBuyer
 from trading.position import Position
@@ -132,6 +133,7 @@ class PumpTrader:
             
             match_string: Optional string to match in token name/symbol
             bro_address: Optional creator address to filter by
+            creator_initial_buy_max: Optional maximum initial buy amount to filter by
             marry_mode: If True, only buy tokens and skip selling
             yolo_mode: If True, trade continuously
         """
@@ -298,6 +300,16 @@ class PumpTrader:
         Returns:
             TokenInfo or None if timeout occurs
         """
+    # Create a one-time event to signal when a token is found
+    token_found = asyncio.Event()
+    found_token = None
+    
+    async def _wait_for_token(self) -> TokenInfo | None:
+        """Wait for a single token to be detected.
+        
+        Returns:
+            TokenInfo or None if timeout occurs
+        """
         # Create a one-time event to signal when a token is found
         token_found = asyncio.Event()
         found_token = None
@@ -308,6 +320,16 @@ class PumpTrader:
             
             # Only process if not already processed and fresh
             if token_key not in self.processed_tokens:
+                # ADD THE FILTER HERE
+                if self.creator_initial_buy_max is not None:
+                    logs_event_processor = LogsEventProcessor(self.pump_program)
+                    buy_amount = logs_event_processor._get_buy_amount_from_logs(token.logs)
+                    if buy_amount > self.creator_initial_buy_max:
+                        logger.info(
+                            f"Skipping token {token.symbol} - creator's initial buy amount is too high ({buy_amount} > {self.creator_initial_buy_max})"
+                        )
+                        return
+                
                 # Record when the token was discovered
                 self.token_timestamps[token_key] = monotonic()
                 found_token = token
