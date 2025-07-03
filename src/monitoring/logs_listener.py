@@ -20,6 +20,17 @@ logger = get_logger(__name__)
 class LogsListener(BaseTokenListener):
     """WebSocket listener for pump.fun token creation events using logsSubscribe."""
 
+    def __init__(self, wss_endpoint: str, pump_program: Pubkey):
+        """Initialize token listener.
+
+        Args:
+            wss_endpoint: WebSocket endpoint URL
+            pump_program: Pump.fun program address
+        """
+        self.wss_endpoint = wss_endpoint
+        self.pump_program = pump_program
+        self.event_processor = LogsEventProcessor(pump_program)
+        self.ping_interval = 20  # seconds
     async def listen_for_tokens(
         self,
         token_callback: Callable[[TokenInfo], Awaitable[None]],
