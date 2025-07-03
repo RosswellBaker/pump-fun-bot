@@ -50,7 +50,7 @@ class LogsEventProcessor:
             return None
         
         # Get the creator's buy amount ONCE at the start, using the correct function you already have.
-        initial_buy_amount = self._get_amount_from_buy_instruction(signature)
+        initial_buy_amount = self._get_initial_buy_for_filter(signature)
 
         # Find and process program data
         for log in logs:
