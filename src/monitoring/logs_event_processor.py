@@ -184,12 +184,11 @@ class LogsEventProcessor:
     def _get_amount_from_buy_instruction(self, tx_signature: str) -> tuple[float | None, str | None]:
         """
         Gets the creator's initial buy amount by parsing the raw 'buy' instruction data.
-        This is the definitive method based on on-chain analysis.
         """
+        rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
+        if not rpc_endpoint: return None, None
+        
         try:
-            rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
-            if not rpc_endpoint: return None, None
-                
             client = Client(rpc_endpoint)
             tx_response = client.get_transaction(Signature.from_string(tx_signature), encoding="jsonParsed", max_supported_transaction_version=0)
 
@@ -200,20 +199,22 @@ class LogsEventProcessor:
             meta = tx_response.value.transaction.meta
 
             for ix in tx.message.instructions:
-                if str(ix.program_id) == str(PumpAddresses.PROGRAM):
-                    # Research-based fix: Add padding to handle improperly padded base64 strings from the RPC node.
+                if str(ix.program_id) != str(PumpAddresses.PROGRAM):
+                    continue
+
+                # CORRECTED LOGIC: Place the try/except block INSIDE the loop.
+                # This allows the loop to safely ignore instructions with data it can't parse (like 'create')
+                # and continue until it finds the 'buy' instruction.
+                try:
                     ix_data_str = ix.data
                     ix_data_str += "=" * (-len(ix_data_str) % 4)
-                    
                     ix_data = base64.b64decode(ix_data_str)
                     
-                    # Check for the correct instruction discriminator
                     if len(ix_data) >= 16 and struct.unpack("<Q", ix_data[:8])[0] == self.BUY_DISCRIMINATOR:
                         token_amount_raw = struct.unpack("<Q", ix_data[8:16])[0]
                         if len(ix.accounts) < 3: continue
-                        # The mint address is the 3rd account in the 'buy' instruction's account list.
+                        
                         mint_address = str(tx.message.account_keys[ix.accounts[2]])
-
                         decimals = None
                         if meta and meta.post_token_balances:
                             for balance in meta.post_token_balances:
@@ -223,9 +224,12 @@ class LogsEventProcessor:
                         if decimals is None: continue
 
                         scaled_amount = token_amount_raw / (10 ** decimals)
-                        logger.info(f"Detected 'buy' instruction for {scaled_amount:,.2f} tokens for mint {mint_address} in tx {tx_signature[:6]}...")
                         return scaled_amount, mint_address
+                except Exception:
+                    # This instruction's data is not what we're looking for. Ignore and continue.
+                    continue
+            
             return None, None
         except Exception as e:
-            logger.error(f"Error in _get_amount_from_buy_instruction: {e}")
+            logger.error(f"A critical error occurred while fetching transaction {tx_signature}: {e}")
             return None, None
