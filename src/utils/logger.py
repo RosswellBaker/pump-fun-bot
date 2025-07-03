@@ -8,7 +8,7 @@ import logging
 _loggers: dict[str, logging.Logger] = {}
 
 
-def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+def get_logger(name: str, level: int = logging.debug) -> logging.Logger:
     """Get or create a logger with the given name.
 
     Args:
