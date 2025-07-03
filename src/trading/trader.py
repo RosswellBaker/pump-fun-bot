@@ -273,7 +273,6 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
-			            self.creator_initial_buy_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
