@@ -181,69 +181,81 @@ class LogsEventProcessor:
         )
         return derived_address
         
-    def _get_initial_buy_for_filter(self, tx_signature: str) -> float | None:
+    def _get_initial_buy_for_filter(self, tx_signature: str, mint_address: str, associated_curve_address: str) -> float:
         """
-        New, non-disruptive function to get the creator's initial buy amount for filtering purposes.
-        It parses the raw 'buy' instruction data efficiently.
+        Calculates the creator's total initial buy amount by analyzing inner instructions
+        to correctly handle bundling within the same transaction. This is the definitive method.
         """
-        rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
-        if not rpc_endpoint: 
-            return None
-        
         try:
+            rpc_endpoint = os.getenv("SOLANA_NODE_RPC_ENDPOINT")
+            if not rpc_endpoint:
+                logger.error("SOLANA_NODE_RPC_ENDPOINT not set in environment")
+                return 0.0
+                
+            from solana.rpc.api import Client
             client = Client(rpc_endpoint)
-            tx_response = client.get_transaction(Signature.from_string(tx_signature), encoding="jsonParsed", max_supported_transaction_version=0)
-
-            if not tx_response or not tx_response.value or not tx_response.value.transaction:
-                return None
             
-            tx = tx_response.value.transaction.transaction
+            from solders.signature import Signature
+            signature = Signature.from_string(tx_signature)
+            
+            tx_response = None
+            try:
+                tx_response = client.get_transaction(signature, encoding="jsonParsed", max_supported_transaction_version=0)
+            except Exception as e:
+                logger.error(f"Failed to get transaction {tx_signature}. Error: {e}")
+                return 0.0
+
+            if not tx_response or not tx_response.value or not tx_response.value.transaction or not tx_response.value.transaction.meta:
+                logger.warning(f"Could not get transaction meta for {tx_signature}")
+                return 0.0
+
             meta = tx_response.value.transaction.meta
+            
+            decimals = None
+            if meta.post_token_balances:
+                for balance in meta.post_token_balances:
+                    if str(balance.mint) == mint_address:
+                        decimals = balance.ui_token_amount.decimals
+                        break
+            
+            if decimals is None:
+                logger.warning(f"Could not determine token decimals for mint {mint_address} in tx {tx_signature}. Cannot calculate initial buy.")
+                return 0.0
 
-            for ix in tx.message.instructions:
-                if str(ix.program_id) != str(PumpAddresses.PROGRAM):
-                    continue
+            total_buy_amount_raw = 0
+            if not meta.inner_instructions:
+                logger.warning(f"No inner instructions found for {tx_signature}, cannot determine initial buy.")
+                return 0.0
 
-                try:
-                    ix_data_str = ix.data
-                    ix_data_str += "=" * (-len(ix_data_str) % 4)
-                    ix_data = base64.b64decode(ix_data_str)
-                    
-                    if len(ix_data) < 8:
+            for instruction_group in meta.inner_instructions:
+                for inner_ix in instruction_group.instructions:
+                    if not hasattr(inner_ix, "parsed"):
                         continue
-                    
-                    discriminator = struct.unpack("<Q", ix_data[:8])[0]
-                    
-                    if discriminator == self.BUY_DISCRIMINATOR:
-                        if len(ix_data) < 16:
-                            continue
-                        
-                        token_amount_raw = struct.unpack("<Q", ix_data[8:16])[0]
-                        
-                        if len(ix.accounts) < 3:
-                            continue
-                        
-                        mint_address = str(tx.message.account_keys[ix.accounts[2]])
-                        
-                        decimals = None
-                        if meta and meta.post_token_balances:
-                            for balance in meta.post_token_balances:
-                                if str(balance.mint) == mint_address:
-                                    decimals = balance.ui_token_amount.decimals
-                                    break
-                        
-                        if decimals is None:
-                            continue
 
-                        scaled_amount = token_amount_raw / (10 ** decimals)
-                        logger.info(f"Filter function successfully parsed creator buy of {scaled_amount:,.2f} for tx {tx_signature[:6]}...")
-                        return scaled_amount
+                    parsed_ix = inner_ix.parsed
+                    if (isinstance(parsed_ix, dict) and
+                        parsed_ix.get("type") == "transfer" and
+                        inner_ix.program == "spl-token"):
 
-                except Exception:
-                    continue
+                        info = parsed_ix.get("info", {})
+                        source = info.get("source")
+                        
+                        if source == associated_curve_address:
+                            try:
+                                amount_raw = int(info.get("amount", "0"))
+                                total_buy_amount_raw += amount_raw
+                            except (ValueError, TypeError):
+                                logger.warning(f"Could not parse amount from inner instruction: {info}")
+
+            if total_buy_amount_raw == 0:
+                logger.debug(f"No initial buy detected from bonding curve for tx {tx_signature[:6]}")
+                return 0.0
+
+            scaled_amount = total_buy_amount_raw / (10 ** decimals)
+            logger.info(f"Detected total initial buy of {scaled_amount:,.2f} tokens from bonding curve in tx {tx_signature[:6]}...")
             
-            return None
-            
+            return scaled_amount
+                    
         except Exception as e:
-            logger.error(f"Filter function encountered a critical error while fetching transaction {tx_signature}: {e}")
-            return None
+            logger.error(f"Critical error in _get_creator_initial_buy_amount_sync: {e}")
+            return 0.0
