@@ -319,6 +319,7 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
+                self.creator_initial_buy_max,
             )
         )
         
