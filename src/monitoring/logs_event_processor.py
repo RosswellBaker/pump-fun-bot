@@ -18,7 +18,6 @@ class LogsEventProcessor:
 
     # Discriminator for create instruction
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
-    BUY_DISCRIMINATOR: Final = 14732714726377317542
     
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -195,16 +194,23 @@ class LogsEventProcessor:
             if not tx_response or not tx_response.value or not tx_response.value.transaction:
                 return None, None
             
-            BUY_DISCRIMINATOR = 14732714726377317542
+            # CORRECTED: This is the official discriminator for the 'buy' instruction from the pump.fun IDL.
+            BUY_DISCRIMINATOR = 16927863322537952870
             tx = tx_response.value.transaction.transaction
             meta = tx_response.value.transaction.meta
 
             for ix in tx.message.instructions:
                 if str(ix.program_id) == str(PumpAddresses.PROGRAM):
-                    ix_data = base64.b64decode(ix.data)
+                    # Add padding to handle improperly padded base64 strings from the RPC node.
+                    ix_data_str = ix.data
+                    ix_data_str += "=" * (-len(ix_data_str) % 4)
+                    
+                    ix_data = base64.b64decode(ix_data_str)
+                    
                     if len(ix_data) >= 16 and struct.unpack("<Q", ix_data[:8])[0] == BUY_DISCRIMINATOR:
                         token_amount_raw = struct.unpack("<Q", ix_data[8:16])[0]
                         if len(ix.accounts) < 3: continue
+                        # The mint address is the 3rd account in the 'buy' instruction's account list.
                         mint_address = str(tx.message.account_keys[ix.accounts[2]])
 
                         decimals = None
