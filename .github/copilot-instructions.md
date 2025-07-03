@@ -47,3 +47,11 @@ inside the original functions of the repository, unless it has to be done no
 matter what. The goal is to solve the bottleneck by filtering tokens before the
 buy, and this filter logic must be in its own, new function, without altering
 the repository's original functions.
+
+you are not allowed to give incorrect or incomplete information. if you
+encounter a situation where you are unsure, ask for clarification or research
+externally.
+
+you are not allowed to give incomplete or incorrect code. if you are unsure
+about the code, ask for clarification or provide a complete solution based on
+the context provided.
