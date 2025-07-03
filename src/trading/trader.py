@@ -27,7 +27,7 @@ from monitoring.block_listener import BlockListener
 from monitoring.geyser_listener import GeyserListener
 from monitoring.logs_listener import LogsListener
 from monitoring.pumpportal_listener import PumpPortalListener
-from src.trading.trader import LogsEventProcessor
+from trading.trader import LogsEventProcessor
 from trading.base import TokenInfo, TradeResult
 from trading.buyer import TokenBuyer
 from trading.position import Position
