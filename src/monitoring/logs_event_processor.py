@@ -64,10 +64,8 @@ class LogsEventProcessor:
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
                         
-                        # DATA ENRICHMENT STEP: Calculate the creator's initial buy amount.
-                        initial_buy_amount = self._get_creator_initial_buy_amount_sync(
-                            signature, str(mint), str(associated_curve)
-                        )
+                        # Get the creator's buy amount ONCE at the start, using the correct function you already have.
+                        initial_buy_amount, _ = self._get_amount_from_buy_instruction(signature)
 
                         return TokenInfo(
                             name=parsed_data["name"],
