@@ -37,7 +37,6 @@ class LogsListener(BaseTokenListener):
         token_callback: Callable[[TokenInfo], Awaitable[None]],
         match_string: str | None = None,
         creator_address: str | None = None,
-        creator_initial_buy_max: int | None = None,
     ) -> None:
         """Listen for new token creations using logsSubscribe.
 
@@ -76,20 +75,9 @@ class LogsListener(BaseTokenListener):
                                 and str(token_info.user) != creator_address
                             ):
                                 logger.info(
-                                    f"Token {token_info.symbol} filtered: not created by {creator_address}"
+                                    f"Token not created by {creator_address}. Skipping..."
                                 )
                                 continue
-                            
-                            # Corrected filter logic
-                            if creator_initial_buy_max is not None and token_info.creator_token_amount is not None:
-                                if token_info.creator_token_amount > creator_initial_buy_max:
-                                    logger.info(
-                                        f"Token {token_info.symbol} filtered: creator bought too many tokens "
-                                        f"({token_info.creator_token_amount:,.2f} > {creator_initial_buy_max:,})"
-                                    )
-                                    continue
-                            
-                            # The two incorrect lines that were here have been removed.
 
                             await token_callback(token_info)
 
