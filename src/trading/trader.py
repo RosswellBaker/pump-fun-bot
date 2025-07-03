@@ -398,6 +398,16 @@ class PumpTrader:
                         f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
                     )
                     continue
+                
+                if self.creator_initial_buy_max is not None:
+                    if (
+                        token_info.creator_token_amount is not None
+                        and token_info.creator_token_amount >= self.creator_initial_buy_max
+                    ):
+                        logger.info(
+                            f"Skipping token {token_info.symbol} - creator initial buy ({token_info.creator_token_amount}) exceeds max ({self.creator_initial_buy_max})"
+                        )
+                        continue
 
                 self.processed_tokens.add(token_key)
 
