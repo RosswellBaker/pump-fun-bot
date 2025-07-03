@@ -400,15 +400,6 @@ class PumpTrader:
                     )
                     continue
 
-                # ADDED: This is our filter logic. It's simple and non-disruptive.
-                if self.creator_initial_buy_max is not None and token_info.creator_token_amount is not None:
-                    if token_info.creator_token_amount > self.creator_initial_buy_max:
-                        logger.info(
-                            f"Token {token_info.symbol} skipped: creator bought too many tokens "
-                            f"({token_info.creator_token_amount:,.2f} > {self.creator_initial_buy_max:,})"
-                        )
-                        continue
-
                 self.processed_tokens.add(token_key)
 
                 logger.info(
@@ -417,6 +408,7 @@ class PumpTrader:
                 await self._handle_token(token_info)
 
             except asyncio.CancelledError:
+                # Handle cancellation gracefully
                 logger.info("Token queue processor was cancelled")
                 break
             except Exception as e:
