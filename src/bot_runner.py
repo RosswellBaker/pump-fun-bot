@@ -80,7 +80,7 @@ async def start_bot(config_path: str):
         wait_time_after_creation=cfg.get("retries", {}).get("wait_after_creation", 15),
         wait_time_after_buy=cfg.get("retries", {}).get("wait_after_buy", 15),
         wait_time_before_new_token=cfg.get("retries", {}).get("wait_before_new_token", 15),
-        max_token_age=cfg["filters"].get("max_token_age", 0.001),
+        max_token_age=cfg.get("timing", {}).get("max_token_age", 0.001),
         token_wait_timeout=cfg.get("timing", {}).get("token_wait_timeout", 30),
         
         # Cleanup settings
@@ -98,7 +98,7 @@ async def start_bot(config_path: str):
     
     await trader.start()
 
-def run_bot_process(config_path: str):
+def run_bot_process(config_path):
     asyncio.run(start_bot(config_path))
 
 def run_all_bots():
