@@ -66,6 +66,8 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
+
+                        creator_initial_buy_max = self._get_buy_amount_from_logs(logs)
                         
                         return TokenInfo(
                             name=parsed_data["name"],
@@ -77,7 +79,7 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-                            creator_initial_buy_max=creator_initial_buy_max,
+                            creator_initial_buy_max=creator_initial_buy_max
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")

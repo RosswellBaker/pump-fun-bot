@@ -83,6 +83,7 @@ class PumpTrader:
         # Trading filters
         match_string: str | None = None,
         bro_address: str | None = None,
+	    creator_initial_buy_max: int | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
     ):
@@ -129,6 +130,7 @@ class PumpTrader:
             
             match_string: Optional string to match in token name/symbol
             bro_address: Optional creator address to filter by
+	        creator_initial_buy_max: Optional maximum initial buy amount to filter by
             marry_mode: If True, only buy tokens and skip selling
             yolo_mode: If True, trade continuously
         """
@@ -216,6 +218,7 @@ class PumpTrader:
         # Trading filters/modes
         self.match_string = match_string
         self.bro_address = bro_address
+        self.creator_initial_buy_max = creator_initial_buy_max
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
         
@@ -231,6 +234,7 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
+        logger.info(f"Creator initial buy filter: {self.creator_initial_buy_max if self.creator_initial_buy_max else 'None'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
@@ -269,6 +273,7 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
+			            self.creator_initial_buy_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
@@ -313,6 +318,7 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
+                self.creator_initial_buy_max,
             )
         )
         
