@@ -1,7 +1,10 @@
+"""
+Event processing for pump.fun tokens using logsSubscribe data.
+"""
+
 import base64
 import struct
 from typing import Final
-import os
 
 import base58
 from solders.pubkey import Pubkey
@@ -16,11 +19,11 @@ logger = get_logger(__name__)
 class LogsEventProcessor:
     """Processes events from pump.fun program logs."""
 
-    # Discriminator for create instruction
+    # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
     # Discriminator for the 'buy' instruction
     BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
-    
+
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
 
@@ -58,15 +61,12 @@ class LogsEventProcessor:
                     if parsed_data and "name" in parsed_data:
                         mint = Pubkey.from_string(parsed_data["mint"])
                         bonding_curve = Pubkey.from_string(parsed_data["bondingCurve"])
-                        # This is the bonding curve's token vault address
                         associated_curve = self._find_associated_bonding_curve(
                             mint, bonding_curve
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-
-                        initial_buy_amount = self._get_buy_amount_from_logs(logs)
-                       
+                        
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -77,8 +77,7 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-                            creator_token_amount=initial_buy_amount, # Store the result
-                            signature=signature
+                            creator_initial_buy_max=creator_initial_buy_max,
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
@@ -209,4 +208,3 @@ class LogsEventProcessor:
             PumpAddresses.PROGRAM,
         )
         return derived_address
-    

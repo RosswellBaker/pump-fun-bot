@@ -10,8 +10,6 @@ from datetime import datetime
 from time import monotonic
 
 from solders.pubkey import Pubkey
-from solders.signature import Signature  # Add this import
-from solana.rpc.api import Client 
 
 from cleanup.modes import (
     handle_cleanup_after_failure,
@@ -27,7 +25,6 @@ from monitoring.block_listener import BlockListener
 from monitoring.geyser_listener import GeyserListener
 from monitoring.logs_listener import LogsListener
 from monitoring.pumpportal_listener import PumpPortalListener
-from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo, TradeResult
 from trading.buyer import TokenBuyer
 from trading.position import Position
@@ -86,7 +83,6 @@ class PumpTrader:
         # Trading filters
         match_string: str | None = None,
         bro_address: str | None = None,
-        creator_initial_buy_max: int | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
     ):
@@ -133,7 +129,6 @@ class PumpTrader:
             
             match_string: Optional string to match in token name/symbol
             bro_address: Optional creator address to filter by
-            creator_initial_buy_max: Optional maximum initial buy amount to filter by
             marry_mode: If True, only buy tokens and skip selling
             yolo_mode: If True, trade continuously
         """
@@ -180,7 +175,7 @@ class PumpTrader:
                 geyser_auth_type, 
                 PumpAddresses.PROGRAM
             )
-            logger.debug("Using Geyser listener for token monitoring")
+            logger.info("Using Geyser listener for token monitoring")
         elif listener_type == "logs":
             self.token_listener = LogsListener(wss_endpoint, PumpAddresses.PROGRAM)
             logger.info("Using logsSubscribe listener for token monitoring")
@@ -221,7 +216,6 @@ class PumpTrader:
         # Trading filters/modes
         self.match_string = match_string
         self.bro_address = bro_address
-        self.creator_initial_buy_max = creator_initial_buy_max
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
         
@@ -237,7 +231,6 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
-        logger.info(f"Creator initial buy filter: {self.creator_initial_buy_max if self.creator_initial_buy_max else 'None'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
@@ -276,7 +269,6 @@ class PumpTrader:
                         lambda token: self._queue_token(token),
                         self.match_string,
                         self.bro_address,
-                        self.creator_initial_buy_max,
                     )
                 except Exception as e:
                     logger.error(f"Token listening stopped due to error: {e!s}")
@@ -300,16 +292,6 @@ class PumpTrader:
         Returns:
             TokenInfo or None if timeout occurs
         """
-    # Create a one-time event to signal when a token is found
-    token_found = asyncio.Event()
-    found_token = None
-    
-    async def _wait_for_token(self) -> TokenInfo | None:
-        """Wait for a single token to be detected.
-        
-        Returns:
-            TokenInfo or None if timeout occurs
-        """
         # Create a one-time event to signal when a token is found
         token_found = asyncio.Event()
         found_token = None
@@ -320,16 +302,6 @@ class PumpTrader:
             
             # Only process if not already processed and fresh
             if token_key not in self.processed_tokens:
-                # ADD THE FILTER HERE
-                if self.creator_initial_buy_max is not None:
-                    logs_event_processor = LogsEventProcessor(self.pump_program)
-                    buy_amount = logs_event_processor._get_buy_amount_from_logs(token.logs)
-                    if buy_amount > self.creator_initial_buy_max:
-                        logger.info(
-                            f"Skipping token {token.symbol} - creator's initial buy amount is too high ({buy_amount} > {self.creator_initial_buy_max})"
-                        )
-                        return
-                
                 # Record when the token was discovered
                 self.token_timestamps[token_key] = monotonic()
                 found_token = token
@@ -341,7 +313,6 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
-                self.creator_initial_buy_max,
             )
         )
         
@@ -448,7 +419,6 @@ class PumpTrader:
             token_info: Token information
         """
         try:
-           
             # Wait for bonding curve to stabilize (unless in extreme fast mode)
             if not self.extreme_fast_mode:
                 # Save token info to file

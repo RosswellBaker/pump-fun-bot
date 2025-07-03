@@ -31,6 +31,7 @@ class LogsListener(BaseTokenListener):
         self.pump_program = pump_program
         self.event_processor = LogsEventProcessor(pump_program)
         self.ping_interval = 20  # seconds
+
     async def listen_for_tokens(
         self,
         token_callback: Callable[[TokenInfo], Awaitable[None]],
