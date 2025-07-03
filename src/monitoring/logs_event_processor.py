@@ -69,7 +69,11 @@ class LogsEventProcessor:
                         creator_vault = self._find_creator_vault(creator)
 
                         creator_initial_buy_max = self._get_buy_amount_from_logs(logs)
-                        
+
+                        if creator_initial_buy_max is None:
+                            logger.warning("Creator initial buy amount could not be determined from logs.")
+                            return None
+
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -140,34 +144,35 @@ class LogsEventProcessor:
 
     def _get_buy_amount_from_logs(self, logs: list[str]) -> float | None:
         """
-        New, efficient filter function that parses the creator's buy amount
-        directly from the log data, avoiding any extra RPC calls.
+        Extracts the creator's buy amount from logs.
         """
         for log in logs:
             if "Program data:" not in log:
                 continue
-        
+
             try:
                 encoded_data = log.split(": ")[1]
                 decoded_data = base64.b64decode(encoded_data)
 
-                if len(decoded_data) < 8:
+                if len(decoded_data) < 16:
+                    logger.warning("Decoded data is too short to contain a valid buy instruction.")
                     continue
 
                 discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                if discriminator == self.BUY_DISCRIMINATOR:
-                    if len(decoded_data) < 16:
-                        continue
-                
-                    # Extract the amount field (8 bytes, starting from index 8)
-                    amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                    scaled_amount = amount_raw / (10**TOKEN_DECIMALS)
-                
-                    logger.debug(f"Filter function successfully parsed creator buy of {scaled_amount:,.2f} from logs.")
-                    return scaled_amount
-            except Exception:
+                if discriminator != self.BUY_DISCRIMINATOR:
+                    logger.debug(f"Skipping log with invalid discriminator: {discriminator}")
+                    continue
+
+                # Extract the amount field (8 bytes, starting from index 8)
+                amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+                scaled_amount = amount_raw / (10**TOKEN_DECIMALS)
+
+                logger.debug(f"Successfully parsed creator buy amount: {scaled_amount:,.2f}")
+                return scaled_amount
+            except Exception as e:
+                logger.error(f"Failed to parse buy amount from logs: {e}")
                 continue
-    
+
         return None
 
     def _find_associated_bonding_curve(
