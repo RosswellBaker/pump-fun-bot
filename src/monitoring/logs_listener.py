@@ -154,25 +154,15 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            if signature == "unknown":
-                logger.warning("Transaction skipped: Signature is unknown.")
-                return None
-
-            buy_amount = get_buy_instruction_amount(logs)
-
-            if buy_amount is None:
-                logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
-                return None
-
-            if not should_process_token(logs):
-                logger.info(
-                    f"Transaction {signature} skipped: Creator's initial buy amount ({buy_amount}) exceeds threshold."
-                )
-                return None
-
-            logger.info(
-                f"Transaction {signature} passed filter: Creator's initial buy amount is {buy_amount}."
-            )
+            # FAST FILTER CHECK (only if RPC client exists)
+            if self.rpc_client and signature != "unknown":
+                try:
+                    should_process, buy_amount = await should_process_token_async(signature, self.rpc_client)
+                    if not should_process:
+                        logger.info(f"🚫 Filtered: {buy_amount:,.0f} tokens exceeds threshold")
+                        return None
+                except:
+                    pass  # On any error, proceed normally
 
             return self.event_processor.process_program_logs(logs, signature)
 
