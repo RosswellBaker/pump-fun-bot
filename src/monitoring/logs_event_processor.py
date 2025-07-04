@@ -5,13 +5,11 @@ Event processing for pump.fun tokens using logsSubscribe data.
 import base64
 import struct
 from typing import Final
-import os
 
 import base58
 from solders.pubkey import Pubkey
 
-from monitoring.filters import validate_creator_initial_buy
-from core.pubkeys import PumpAddresses, SystemAddresses, TOKEN_DECIMALS
+from core.pubkeys import PumpAddresses, SystemAddresses
 from trading.base import TokenInfo
 from utils.logger import get_logger
 
@@ -23,8 +21,6 @@ class LogsEventProcessor:
 
     # Discriminator for create instruction to avoid non-create transactions
     CREATE_DISCRIMINATOR: Final[int] = 8530921459188068891
-    # Discriminator for the 'buy' instruction
-    BUY_DISCRIMINATOR: Final[int] = 16927863322537952870
 
     def __init__(self, pump_program: Pubkey):
         """Initialize event processor.
@@ -68,13 +64,7 @@ class LogsEventProcessor:
                         )
                         creator = Pubkey.from_string(parsed_data["creator"])
                         creator_vault = self._find_creator_vault(creator)
-
-                        creator_initial_buy_max = self._get_buy_amount_from_logs(logs)
-
-                        if creator_initial_buy_max is None:
-                            logger.warning("Creator initial buy amount could not be determined from logs.")
-                            return None
-
+                        
                         return TokenInfo(
                             name=parsed_data["name"],
                             symbol=parsed_data["symbol"],
@@ -85,8 +75,6 @@ class LogsEventProcessor:
                             user=Pubkey.from_string(parsed_data["user"]),
                             creator=creator,
                             creator_vault=creator_vault,
-                            creator_token_amount=creator_initial_buy_max, # Store the result
-                            signature=signature
                         )
                 except Exception as e:
                     logger.error(f"Failed to process log data: {e}")
@@ -142,39 +130,6 @@ class LogsEventProcessor:
         except Exception as e:
             logger.error(f"Failed to parse create instruction: {e}")
             return None
-
-    def _get_buy_amount_from_logs(self, logs: list[str]) -> float | None:
-        """
-        Extracts the creator's buy amount from logs.
-        """
-        for log in logs:
-            if "Program data:" not in log:
-                continue
-
-            try:
-                encoded_data = log.split(": ")[1]
-                decoded_data = base64.b64decode(encoded_data)
-
-                if len(decoded_data) < 16:
-                    logger.warning("Decoded data is too short to contain a valid buy instruction.")
-                    continue
-
-                discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                if discriminator != self.BUY_DISCRIMINATOR:
-                    logger.debug(f"Skipping log with invalid discriminator: {discriminator}")
-                    continue
-
-                # Extract the amount field (8 bytes, starting from index 8)
-                amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                scaled_amount = amount_raw / (10**TOKEN_DECIMALS)
-
-                logger.debug(f"Successfully parsed creator buy amount: {scaled_amount:,.2f}")
-                return scaled_amount
-            except Exception as e:
-                logger.error(f"Failed to parse buy amount from logs: {e}")
-                continue
-
-        return None
 
     def _find_associated_bonding_curve(
         self, mint: Pubkey, bonding_curve: Pubkey
