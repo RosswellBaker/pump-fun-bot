@@ -4,7 +4,7 @@ import struct
 
 # Configurable threshold for the creator's initial buy amount
 CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
-BUY_DISCRIMINATOR = 16927863322537952870  # Example discriminator
+BUY_DISCRIMINATOR = 16927863322537952870  # Global constant for "buy" instruction
 TOKEN_DECIMALS = 6  # Example token decimals
 
 def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
@@ -26,16 +26,7 @@ def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
             encoded_data = log.split(": ")[1]
             decoded_data = base64.b64decode(encoded_data)
 
-            # Ensure the decoded data is long enough to contain the discriminator and amount
-            if len(decoded_data) < 16:
-                continue
-
-            # Extract the discriminator and validate it
-            discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-            if discriminator != BUY_DISCRIMINATOR:
-                continue
-
-            # Extract the amount field and scale it based on token decimals
+            # Directly extract the amount field
             amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
             scaled_amount = amount_raw / (10 ** TOKEN_DECIMALS)
 
@@ -47,15 +38,15 @@ def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     return None
 
 
-def should_queue_token(logs: List[str]) -> bool:
+def should_process_token(logs: List[str]) -> bool:
     """
-    Determines whether a token should be queued based on the creator's initial buy amount.
+    Determines whether a token should be processed based on the creator's initial buy amount.
 
     Args:
         logs: The logs from the transaction.
 
     Returns:
-        True if the token should be queued, False otherwise.
+        True if the token should be processed, False otherwise.
     """
     buy_amount = get_buy_instruction_amount(logs)
     if buy_amount is None:

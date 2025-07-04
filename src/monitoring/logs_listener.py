@@ -144,32 +144,27 @@ class LogsListener(BaseTokenListener):
 
     async def _wait_for_token_creation(self, websocket) -> TokenInfo | None:
         try:
-            # Wait for a WebSocket message
             response = await asyncio.wait_for(websocket.recv(), timeout=30)
             data = json.loads(response)
 
-            # Ensure the message contains the expected method
             if "method" not in data or data["method"] != "logsNotification":
                 return None
 
-            # Extract logs and signature from the WebSocket message
             log_data = data["params"]["result"]["value"]
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # If the signature is "unknown", skip processing
             if signature == "unknown":
                 logger.warning("Transaction skipped: Signature is unknown.")
                 return None
 
-            # Apply filtering logic using filters.py
             buy_amount = get_buy_instruction_amount(logs)
 
             if buy_amount is None:
                 logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
                 return None
 
-            if not should_queue_token(logs):
+            if not should_process_token(logs):
                 logger.info(
                     f"Transaction {signature} skipped: Creator's initial buy amount ({buy_amount}) exceeds threshold."
                 )
@@ -179,7 +174,6 @@ class LogsListener(BaseTokenListener):
                 f"Transaction {signature} passed filter: Creator's initial buy amount is {buy_amount}."
             )
 
-            # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
 
         except asyncio.TimeoutError:
