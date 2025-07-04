@@ -18,7 +18,7 @@ def fetch_transaction_logs(tx_hash: str) -> list[str]:
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getTransaction",
-        "params": [tx_hash, {"encoding": "json", "commitment": "processed"}]  # Updated commitment level
+        "params": [tx_hash, {"encoding": "json", "commitment": "confirmed"}]  # Corrected commitment level
     }
     response = requests.post(SOLANA_RPC_ENDPOINT, json=payload)
     print(f"RPC Response: {response.json()}")  # Debugging statement
@@ -48,6 +48,8 @@ def test_filters(tx_hash: str) -> None:
         The extracted buy instruction amount and whether the token passes the filter.
     """
     try:
+        print(f"Testing transaction hash: {tx_hash}")  # Debugging statement
+
         # Fetch the logs for the transaction
         logs = fetch_transaction_logs(tx_hash)
 
