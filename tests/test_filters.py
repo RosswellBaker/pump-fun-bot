@@ -1,7 +1,7 @@
 import requests
 from monitoring.filters import get_buy_instruction_amount, should_process_token
 
-# Example Solana RPC endpoint (replace with your actual endpoint)
+# Regular Solana RPC endpoint
 SOLANA_RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
 
 def fetch_transaction_logs(tx_hash: str) -> list[str]:
@@ -18,7 +18,7 @@ def fetch_transaction_logs(tx_hash: str) -> list[str]:
         "jsonrpc": "2.0",
         "id": 1,
         "method": "getTransaction",
-        "params": [tx_hash, {"encoding": "json", "commitment": "confirmed"}]
+        "params": [tx_hash, {"encoding": "json", "commitment": "processed"}]  # Updated commitment level
     }
     response = requests.post(SOLANA_RPC_ENDPOINT, json=payload)
     print(f"RPC Response: {response.json()}")  # Debugging statement
