@@ -108,7 +108,7 @@ class BondingCurveManager:
             return BondingCurveState(account.data)
 
         except Exception as e:
-            logger.debug(f"Failed to get curve state: {e!s}")
+            logger.error(f"Failed to get curve state: {e!s}")
             raise ValueError(f"Invalid curve state: {e!s}")
 
     async def calculate_price(self, curve_address: Pubkey) -> float:
