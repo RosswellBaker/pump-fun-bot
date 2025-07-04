@@ -9,6 +9,7 @@ import os
 from datetime import datetime
 from time import monotonic
 
+import uvloop
 from solders.pubkey import Pubkey
 
 from cleanup.modes import (
@@ -30,6 +31,8 @@ from trading.buyer import TokenBuyer
 from trading.position import Position
 from trading.seller import TokenSeller
 from utils.logger import get_logger
+
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 logger = get_logger(__name__)
 
@@ -83,7 +86,6 @@ class PumpTrader:
         # Trading filters
         match_string: str | None = None,
         bro_address: str | None = None,
-	    creator_initial_buy_max: int | None = None,
         marry_mode: bool = False,
         yolo_mode: bool = False,
     ):
@@ -130,7 +132,6 @@ class PumpTrader:
             
             match_string: Optional string to match in token name/symbol
             bro_address: Optional creator address to filter by
-	        creator_initial_buy_max: Optional maximum initial buy amount to filter by
             marry_mode: If True, only buy tokens and skip selling
             yolo_mode: If True, trade continuously
         """
@@ -218,7 +219,6 @@ class PumpTrader:
         # Trading filters/modes
         self.match_string = match_string
         self.bro_address = bro_address
-        self.creator_initial_buy_max = creator_initial_buy_max
         self.marry_mode = marry_mode
         self.yolo_mode = yolo_mode
         
@@ -234,7 +234,6 @@ class PumpTrader:
         logger.info("Starting pump.fun trader")
         logger.info(f"Match filter: {self.match_string if self.match_string else 'None'}")
         logger.info(f"Creator filter: {self.bro_address if self.bro_address else 'None'}")
-        logger.info(f"Creator initial buy filter: {self.creator_initial_buy_max if self.creator_initial_buy_max else 'None'}")
         logger.info(f"Marry mode: {self.marry_mode}")
         logger.info(f"YOLO mode: {self.yolo_mode}")
         logger.info(f"Exit strategy: {self.exit_strategy}")
@@ -317,7 +316,6 @@ class PumpTrader:
                 token_callback,
                 self.match_string,
                 self.bro_address,
-                self.creator_initial_buy_max,
             )
         )
         
@@ -398,16 +396,6 @@ class PumpTrader:
                         f"Skipping token {token_info.symbol} - too old ({token_age:.1f}s > {self.max_token_age}s)"
                     )
                     continue
-                
-                if self.creator_initial_buy_max is not None:
-                    if (
-                        token_info.creator_token_amount is not None
-                        and token_info.creator_token_amount >= self.creator_initial_buy_max
-                    ):
-                        logger.info(
-                            f"Skipping token {token_info.symbol} - creator initial buy ({token_info.creator_token_amount}) exceeds max ({self.creator_initial_buy_max})"
-                        )
-                        continue
 
                 self.processed_tokens.add(token_key)
 
