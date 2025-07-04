@@ -3,6 +3,7 @@ from monitoring.filters import get_buy_instruction_amount, should_process_token
 
 # Example Solana RPC endpoint (replace with your actual endpoint)
 SOLANA_RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
+
 def fetch_transaction_logs(tx_hash: str) -> list[str]:
     """
     Fetches the logs for a given transaction hash from the Solana blockchain.
@@ -20,6 +21,8 @@ def fetch_transaction_logs(tx_hash: str) -> list[str]:
         "params": [tx_hash, {"encoding": "json", "commitment": "confirmed"}]
     }
     response = requests.post(SOLANA_RPC_ENDPOINT, json=payload)
+    print(f"RPC Response: {response.json()}")  # Debugging statement
+
     if response.status_code != 200:
         raise Exception(f"Failed to fetch transaction: {response.text}")
 
