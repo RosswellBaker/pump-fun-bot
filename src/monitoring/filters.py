@@ -1,125 +1,116 @@
-import asyncio
+from typing import List, Optional
 import base64
 import struct
-import os
-from typing import Optional
-from core.client import SolanaClient  # Use the existing SolanaClient from the repo
+import hashlib
 
-# Your exact constants - keeping the same
-CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
-BUY_DISCRIMINATOR = 16927863322537952870  # Global constant for "buy" instruction (from repo IDL)
-TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
-PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+# Configurable threshold for the creator's initial buy amount (50 million tokens)
+CREATOR_INITIAL_BUY_THRESHOLD = 50_000_000  # 50 million tokens
+PUMP_TOKEN_DECIMALS = 6  # Pump.fun tokens use 6 decimals, not 9!
 
-# Global RPC client - created once and reused
-_rpc_client = None
+# Calculate the correct BUY_DISCRIMINATOR using Anchor framework method
+def calculate_buy_discriminator():
+    """Calculate the correct discriminator for pump.fun buy instruction"""
+    # Anchor uses sha256('global:buy') for the buy instruction discriminator
+    hash_input = 'global:buy'.encode('utf-8')
+    hash_result = hashlib.sha256(hash_input).digest()
+    # Take first 8 bytes as little-endian u64
+    return struct.unpack('<Q', hash_result[:8])[0]
 
-async def get_rpc_client():
-    """Get or create the RPC client using the same endpoint as the main bot"""
-    global _rpc_client
-    if _rpc_client is None:
-        # Use the same RPC endpoint as configured in your .env file
-        rpc_endpoint = os.getenv('SOLANA_NODE_RPC_ENDPOINT')
-        if not rpc_endpoint:
-            raise ValueError("SOLANA_NODE_RPC_ENDPOINT not found in environment")
-        _rpc_client = SolanaClient(rpc_endpoint)
-    return _rpc_client
+# Correct discriminator calculation
+BUY_DISCRIMINATOR = calculate_buy_discriminator()
+print(f"Calculated BUY_DISCRIMINATOR: {BUY_DISCRIMINATOR}")
 
-async def get_buy_amount_from_signature(signature: str) -> Optional[float]:
+
+def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     """
-    ULTRA-FAST buy amount extraction - 100ms timeout max.
-    If it takes longer, we skip the filter to maintain bot speed.
+    Extracts the amount field from the buy instruction in the logs.
+    
+    Args:
+        logs: The logs from the transaction (from logsSubscribe).
+    
+    Returns:
+        The scaled amount as a float if found, otherwise None.
     """
-    try:
-        client = await get_rpc_client()
-        
-        # ULTRA-FAST RPC call - 100ms timeout to maintain lightning speed
-        rpc_client = await client.get_client()
-        response = await asyncio.wait_for(
-            rpc_client.get_transaction(signature, encoding="base64", max_supported_transaction_version=0),
-            timeout=0.1  # 100ms max - if slower, skip filter
-        )
-        
-        if not response.value?.transaction?.message:
-            return None
-            
-        # Find buy instruction (ultra-fast parsing)
-        for instruction in response.value.transaction.message.instructions:
-            try:
-                # Check if pump.fun program
-                account_keys = response.value.transaction.message.account_keys
-                program_id = str(account_keys[instruction.program_id_index])
-                if program_id != PUMP_PROGRAM_ID:
-                    continue
-                
-                # Decode instruction
-                data = base64.b64decode(instruction.data)
-                if len(data) < 16:
-                    continue
-                
-                # Check discriminator
-                discriminator = struct.unpack('<Q', data[0:8])[0]
-                if discriminator != BUY_DISCRIMINATOR:
-                    continue
-                
-                # Extract REAL amount
-                amount_raw = struct.unpack('<Q', data[8:16])[0]
-                return amount_raw / (10 ** TOKEN_DECIMALS)
-                
-            except:
+    for log in logs:
+        # Look for program data logs specifically
+        if "Program data:" not in log:
+            continue
+
+        try:
+            # Extract the base64 encoded data after "Program data: "
+            parts = log.split("Program data: ")
+            if len(parts) != 2:
                 continue
-        return None
-    except asyncio.TimeoutError:
-        # If RPC is slow, skip filter to maintain speed
-        return None
-    except:
-        return None  # Don't break bot on errors
+                
+            encoded_data = parts[1].strip()
+            
+            # Decode the base64 data
+            decoded_data = base64.b64decode(encoded_data)
+            
+            # Debug: Print decoded data for troubleshooting
+            print(f"Log: {log}")
+            print(f"Decoded data length: {len(decoded_data)}")
+            print(f"Decoded data hex: {decoded_data.hex()}")
+            
+            # Ensure we have at least 16 bytes (8 for discriminator + 8 for amount)
+            if len(decoded_data) < 16:
+                print(f"Log skipped: Data too short ({len(decoded_data)} bytes)")
+                continue
 
-# ALTERNATIVE: Completely non-blocking version
-async def should_process_token_nonblocking(signature: str) -> bool:
-    """
-    NON-BLOCKING version: Always returns True immediately, 
-    but logs filter results in background for monitoring.
-    This maintains 100% bot speed while still providing filter feedback.
-    """
-    # Start filter check in background (fire and forget)
-    asyncio.create_task(_background_filter_check(signature))
-    
-    # Always allow processing to maintain speed
-    return True
+            # Extract and verify the discriminator (first 8 bytes)
+            discriminator_bytes = decoded_data[0:8]
+            discriminator = struct.unpack("<Q", discriminator_bytes)[0]
+            
+            print(f"Found discriminator: {discriminator}")
+            print(f"Expected discriminator: {BUY_DISCRIMINATOR}")
+            
+            if discriminator != BUY_DISCRIMINATOR:
+                print(f"Log skipped: Discriminator {discriminator} does not match BUY_DISCRIMINATOR {BUY_DISCRIMINATOR}")
+                continue
 
-async def _background_filter_check(signature: str):
-    """Background task to check filter and log results"""
-    try:
-        buy_amount = await get_buy_amount_from_signature(signature)
-        if buy_amount is not None:
-            if buy_amount > CREATOR_INITIAL_BUY_THRESHOLD:
-                print(f"🚨 PROCESSED POTENTIAL RUG: {signature} - {buy_amount:,.0f} tokens > {CREATOR_INITIAL_BUY_THRESHOLD:,}")
-            else:
-                print(f"✅ PROCESSED SAFE TOKEN: {signature} - {buy_amount:,.0f} tokens")
-    except Exception as e:
-        pass  # Silent background failure
+            # Extract the amount field (bytes 8-15, according to IDL structure)
+            amount_bytes = decoded_data[8:16]
+            amount_raw = struct.unpack("<Q", amount_bytes)[0]
+            
+            # Scale the amount using pump.fun's 6 decimals
+            scaled_amount = amount_raw / (10 ** PUMP_TOKEN_DECIMALS)
 
-async def should_process_token_simple(signature: str) -> tuple[bool, Optional[float]]:
-    """
-    Simple gatekeeper function - completely self-contained.
-    Returns (should_process, buy_amount)
-    """
-    buy_amount = await get_buy_amount_from_signature(signature)
-    
-    if buy_amount is None:
-        return True, None  # Process if unknown (keeps bot running)
-    
-    if buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD:
-        return True, buy_amount
-    else:
-        return False, buy_amount
+            # Debug: Log the extracted amount
+            print(f"Raw amount: {amount_raw}")
+            print(f"Scaled amount: {scaled_amount}")
 
-# Keep your original function names for compatibility but they won't work
-def get_buy_instruction_amount(logs):
-    """DEPRECATED: This approach doesn't work with logs. Use should_process_token_simple instead."""
+            return scaled_amount
+            
+        except Exception as e:
+            print(f"Error decoding log: {e}")
+            print(f"Problematic log: {log}")
+            continue
+
+    # If no valid buy instruction is found, return None
+    print("No valid buy instruction found in logs")
     return None
 
-def should_process_token(logs):
-    """DEPRECATED: This approach doesn't work with logs. Use should_process_token_simple instead."""
-    return True
+
+def should_process_token(logs: List[str]) -> bool:
+    """
+    Determines whether a token should be processed based on the creator's initial buy amount.
+    
+    Args:
+        logs: The logs from the transaction.
+    
+    Returns:
+        True if the token should be processed, False otherwise.
+    """
+    buy_amount = get_buy_instruction_amount(logs)
+    
+    if buy_amount is None:
+        print("No valid buy instruction found.")
+        return False
+
+    if buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD:
+        print(f"✅ Token PASSED filter: Buy amount {buy_amount:,.2f} is <= threshold {CREATOR_INITIAL_BUY_THRESHOLD:,}")
+        return True
+    else:
+        print(f"❌ Token FAILED filter: Buy amount {buy_amount:,.2f} exceeds threshold {CREATOR_INITIAL_BUY_THRESHOLD:,}")
+        return False
+    

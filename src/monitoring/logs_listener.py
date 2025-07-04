@@ -142,36 +142,63 @@ class LogsListener(BaseTokenListener):
         except Exception as e:
             logger.error(f"Ping error: {str(e)}")
 
-    async def _wait_for_token_creation(self, websocket) -> TokenInfo | None:
+    async def wait_for_token_creation(self, websocket) -> TokenInfo | None:
+        """
+        Waits for token creation events and filters based on creator's initial buy amount.
+        Only processes tokens where the creator's initial buy is <= 50 million tokens.
+        """
         try:
+            # Wait for WebSocket response with timeout
             response = await asyncio.wait_for(websocket.recv(), timeout=30)
             data = json.loads(response)
-
+            
+            # Validate the response structure
             if "method" not in data or data["method"] != "logsNotification":
                 return None
-
+                
             log_data = data["params"]["result"]["value"]
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
-
-            # FAST FILTER CHECK (only if RPC client exists)
-            if self.rpc_client and signature != "unknown":
-                try:
-                    should_process, buy_amount = await should_process_token_async(signature, self.rpc_client)
-                    if not should_process:
-                        logger.info(f"🚫 Filtered: {buy_amount:,.0f} tokens exceeds threshold")
-                        return None
-                except:
-                    pass  # On any error, proceed normally
-
+            
+            if signature == "unknown":
+                logger.warning("Transaction skipped: Signature is unknown.")
+                return None
+            
+            logger.info(f"Processing transaction: {signature}")
+            
+            # Check if this transaction contains a valid buy instruction
+            buy_amount = get_buy_instruction_amount(logs)
+            if buy_amount is None:
+                logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
+                return None
+            
+            # Filter based on creator's initial buy amount threshold
+            if not should_process_token(logs):
+                logger.info(
+                    f"Transaction {signature} skipped: Creator's initial buy amount ({buy_amount:,.2f}) exceeds threshold."
+                )
+                return None
+            
+            # Token passed the filter - proceed with processing
+            logger.info(
+                f"✅ Transaction {signature} PASSED filter: Creator's initial buy amount is {buy_amount:,.2f} tokens."
+            )
+            
+            # Process the token creation event
             return self.event_processor.process_program_logs(logs, signature)
-
+            
         except asyncio.TimeoutError:
             logger.debug("No data received for 30 seconds")
+            return None
+            
         except websockets.exceptions.ConnectionClosed:
             logger.warning("WebSocket connection closed")
             raise
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {str(e)}")
+            return None
+            
         except Exception as e:
             logger.error(f"Error processing WebSocket message: {str(e)}")
-
-        return None
+            return None
