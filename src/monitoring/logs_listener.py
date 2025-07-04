@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 import websockets
 from solders.pubkey import Pubkey
 
-from monitoring.filters import get_buy_instruction_amount, should_queue_token
+from monitoring.filters import get_buy_instruction_amount, should_process_token
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
