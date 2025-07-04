@@ -91,7 +91,6 @@ async def start_bot(config_path: str):
         # Trading filters
         match_string=cfg["filters"].get("match_string"),
         bro_address=cfg["filters"].get("bro_address"),
-        creator_initial_buy_max=cfg["filters"].get("creator_initial_buy_max"),
         marry_mode=cfg["filters"].get("marry_mode", False),
         yolo_mode=cfg["filters"].get("yolo_mode", False),
     )
