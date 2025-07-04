@@ -2,8 +2,7 @@ import requests
 from monitoring.filters import get_buy_instruction_amount, should_process_token
 
 # Example Solana RPC endpoint (replace with your actual endpoint)
-SOLANA_RPC_ENDPOINT = "https://maximum-tame-sea.solana-mainnet.quiknode.pro/329370b4b97b576ab521d9fd520810272293cebb/"
-
+SOLANA_RPC_ENDPOINT = "https://api.mainnet-beta.solana.com"
 def fetch_transaction_logs(tx_hash: str) -> list[str]:
     """
     Fetches the logs for a given transaction hash from the Solana blockchain.
