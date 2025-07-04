@@ -1,27 +1,21 @@
-from typing import List
+from typing import List, Optional
 import base64
 import struct
-import logging
 
-logger = logging.getLogger(__name__)
+# Configurable threshold for the creator's initial buy amount
+CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
+BUY_DISCRIMINATOR = 16927863322537952870  # Example discriminator
+TOKEN_DECIMALS = 6  # Example token decimals
 
-def validate_creator_initial_buy(
-    logs: List[str], 
-    buy_discriminator: int, 
-    token_decimals: int, 
-    max_buy: float
-) -> bool:
+def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     """
-    Validates the creator's initial buy amount against the max threshold.
+    Extracts the amount field from the buy instruction in the logs.
 
     Args:
         logs: The logs from the transaction.
-        buy_discriminator: The discriminator for the "buy" instruction.
-        token_decimals: The number of decimals for the token.
-        max_buy: The maximum allowed buy amount.
 
     Returns:
-        True if the creator's initial buy amount is within the threshold, False otherwise.
+        The scaled amount as a float if found, otherwise None.
     """
     for log in logs:
         if "Program data:" not in log:
@@ -34,26 +28,37 @@ def validate_creator_initial_buy(
 
             # Ensure the decoded data is long enough to contain the discriminator and amount
             if len(decoded_data) < 16:
-                logger.warning("Decoded data is too short to contain a valid buy instruction.")
                 continue
 
             # Extract the discriminator and validate it
             discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-            if discriminator != buy_discriminator:
-                logger.debug(f"Skipping log with invalid discriminator: {discriminator}")
+            if discriminator != BUY_DISCRIMINATOR:
                 continue
 
             # Extract the amount field and scale it based on token decimals
             amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-            scaled_amount = amount_raw / (10 ** token_decimals)
+            scaled_amount = amount_raw / (10 ** TOKEN_DECIMALS)
 
-            logger.debug(f"Creator buy amount: {scaled_amount:,.2f}")
-
-            # Validate the scaled amount against the max threshold
-            return scaled_amount <= max_buy
-        except Exception as e:
-            logger.error(f"Failed to validate creator buy amount: {e}")
+            return scaled_amount
+        except Exception:
             continue
 
-    # If no valid buy instruction is found, return False
-    return False
+    # If no valid buy instruction is found, return None
+    return None
+
+
+def should_queue_token(logs: List[str]) -> bool:
+    """
+    Determines whether a token should be queued based on the creator's initial buy amount.
+
+    Args:
+        logs: The logs from the transaction.
+
+    Returns:
+        True if the token should be queued, False otherwise.
+    """
+    buy_amount = get_buy_instruction_amount(logs)
+    if buy_amount is None:
+        return False
+
+    return buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD
