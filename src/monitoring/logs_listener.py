@@ -142,7 +142,7 @@ class LogsListener(BaseTokenListener):
         except Exception as e:
             logger.error(f"Ping error: {str(e)}")
 
-    async def wait_for_token_creation(self, websocket) -> TokenInfo | None:
+    async def _wait_for_token_creation(self, websocket) -> TokenInfo | None:
         """
         Waits for token creation events and filters based on creator's initial buy amount.
         Only processes tokens where the creator's initial buy is <= 50 million tokens.
