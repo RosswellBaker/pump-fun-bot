@@ -9,131 +9,114 @@ TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 
 def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     """
-    NUCLEAR DEBUG - Shows EVERYTHING about Program data entries
-    """
-    print(f"\n{'='*80}")
-    print(f"ANALYZING TRANSACTION LOGS ({len(logs)} total lines)")
-    print(f"{'='*80}")
+    Extracts the amount field from the buy instruction in the logs.
     
-    # First, map out the entire transaction structure
-    instruction_map = {}
-    program_data_map = {}
-    current_instruction = None
+    Based on actual Solscan data, we know:
+    - There are multiple Program data entries in a pump.fun mint transaction
+    - The Buy instruction data contains discriminator + amount + max_sol_cost
+    - We need to check ALL Program data entries to find the right one
+
+    Args:
+        logs: The logs from the transaction.
+
+    Returns:
+        The scaled amount as a float if found, otherwise None.
+    """
+    # Look for the Buy instruction log first to confirm it exists
+    has_buy_instruction = False
+    buy_instruction_index = -1
     
     for i, log in enumerate(logs):
-        # Track instructions
-        if "Program log: Instruction:" in log:
-            instruction_name = log.split("Instruction: ")[1].strip()
-            current_instruction = instruction_name
-            instruction_map[i] = instruction_name
-            print(f"Line {i}: Found instruction '{instruction_name}'")
-        
-        # Track Program data
-        if "Program data:" in log:
-            program_data_map[i] = {
-                'after_instruction': current_instruction,
-                'log': log
-            }
+        if "Program log: Instruction: Buy" in log:
+            has_buy_instruction = True
+            buy_instruction_index = i
+            break
     
-    print(f"\nFound {len(instruction_map)} instructions: {list(instruction_map.values())}")
-    print(f"Found {len(program_data_map)} Program data entries")
+    if not has_buy_instruction:
+        return None
     
-    # Now analyze each Program data entry
-    for line_num, data_info in program_data_map.items():
-        print(f"\n{'='*60}")
-        print(f"Program data at line {line_num} (after '{data_info['after_instruction']}' instruction)")
-        print(f"{'='*60}")
-        
-        log = data_info['log']
+    # Now find the Program data that comes AFTER the Buy instruction
+    # In pump.fun transactions, the Program data follows shortly after the instruction
+    for i in range(buy_instruction_index, min(buy_instruction_index + 50, len(logs))):
+        if i >= len(logs):
+            break
+            
+        log = logs[i]
+        if "Program data:" not in log:
+            continue
         
         try:
-            # Extract base64 data
-            if "Program data: " in log:
-                data_start = log.find("Program data: ") + 14
-                encoded_data = log[data_start:].strip()
-            else:
-                print("ERROR: Couldn't find 'Program data: ' prefix")
+            # Extract the base64 data
+            # The log format is: "Program data: <base64data>"
+            if "Program data: " not in log:
+                continue
+                
+            data_start = log.find("Program data: ") + 14  # Length of "Program data: "
+            encoded_data = log[data_start:].strip()
+            
+            # Decode the base64 data
+            decoded_data = base64.b64decode(encoded_data)
+            
+            # Check if it's long enough for a buy instruction (24 bytes minimum)
+            if len(decoded_data) < 24:
                 continue
             
-            print(f"Base64 string (first 50 chars): {encoded_data[:50]}...")
-            print(f"Base64 length: {len(encoded_data)}")
+            # Check the discriminator (first 8 bytes)
+            discriminator = struct.unpack("<Q", decoded_data[:8])[0]
             
-            # Decode
-            decoded_data = base64.b64decode(encoded_data)
-            print(f"Decoded length: {len(decoded_data)} bytes")
-            print(f"Hex (first 32 bytes): {decoded_data[:32].hex()}")
-            
-            if len(decoded_data) >= 8:
-                # Get discriminator
-                discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                print(f"Discriminator (u64): {discriminator}")
-                print(f"Discriminator (hex): {decoded_data[:8].hex()}")
+            if discriminator == BUY_DISCRIMINATOR:
+                # Found the buy instruction data!
+                # Extract amount (bytes 8-16) and max_sol_cost (bytes 16-24)
+                amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+                max_sol_cost_raw = struct.unpack("<Q", decoded_data[16:24])[0]
                 
-                # Check if it matches our expected discriminators
-                if discriminator == BUY_DISCRIMINATOR:
-                    print("*** MATCHES BUY_DISCRIMINATOR! ***")
-                elif discriminator == 8530921459188068891:
-                    print("*** This is CREATE discriminator ***")
-                else:
-                    print(f"Unknown discriminator")
+                # Convert to decimal representation
+                scaled_amount = amount_raw / (10 ** TOKEN_DECIMALS)
                 
-                # If it could be a buy instruction, try to parse it
-                if len(decoded_data) >= 24:
-                    # Try to parse as buy instruction regardless of discriminator
-                    test_amount = struct.unpack("<Q", decoded_data[8:16])[0]
-                    test_max_sol = struct.unpack("<Q", decoded_data[16:24])[0]
-                    
-                    print(f"\nIF this were a buy instruction:")
-                    print(f"  Amount (raw): {test_amount}")
-                    print(f"  Amount (tokens): {test_amount / (10 ** TOKEN_DECIMALS):,.6f}")
-                    print(f"  Max SOL (raw): {test_max_sol}")
-                    print(f"  Max SOL (SOL): {test_max_sol / 1e9:.6f}")
-                    
-                    # Does this look reasonable?
-                    if 0 < test_amount / (10 ** TOKEN_DECIMALS) <= 1_000_000_000:
-                        print(f"  ^ This amount looks reasonable for tokens!")
-                        
-                        if discriminator == BUY_DISCRIMINATOR:
-                            print(f"  AND discriminator matches! Returning {test_amount / (10 ** TOKEN_DECIMALS):,.6f}")
-                            return test_amount / (10 ** TOKEN_DECIMALS)
-                        else:
-                            print(f"  BUT discriminator doesn't match BUY_DISCRIMINATOR")
-                            print(f"  Maybe BUY_DISCRIMINATOR is wrong?")
+                # Sanity check - amount should be less than total supply
+                if scaled_amount > 1_000_000_000:  # 1B total supply
+                    continue
                 
-        except Exception as e:
-            print(f"ERROR parsing: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+                return scaled_amount
+                
+        except Exception:
+            # If we can't parse this Program data, try the next one
+            continue
     
-    print(f"\n{'='*80}")
-    print("END OF ANALYSIS - No matching buy instruction found")
-    print(f"{'='*80}")
+    # If we get here, we found a Buy instruction but couldn't parse its data
     return None
 
 
 def should_process_token(logs: List[str], signature: str) -> Tuple[bool, Optional[float]]:
     """
-    Nuclear debug version
+    Determines whether a token should be processed based on the creator's initial buy amount.
+    
+    This is the gatekeeper for pump.fun token creations. We only filter CREATE transactions
+    where the creator buys too much of the supply.
+
+    Args:
+        logs: The logs from the transaction.
+        signature: Transaction signature for logging purposes.
+
+    Returns:
+        Tuple of (should_process, buy_amount)
     """
-    print(f"\n{'#'*80}")
-    print(f"SHOULD_PROCESS_TOKEN: {signature}")
-    print(f"{'#'*80}")
+    # Check if this is a token creation transaction
+    is_create_tx = any("Program log: Instruction: Create" in log for log in logs)
     
-    is_create = any("Program log: Instruction: Create" in log for log in logs)
-    
-    if not is_create:
-        print("Not a Create transaction - PASS THROUGH")
+    if not is_create_tx:
+        # Not a token creation - let it pass through
+        # Could be a regular buy/sell or other pump.fun operation
         return True, None
     
-    print("This IS a Create transaction - checking buy amount...")
-    
+    # This is a token creation. Now check the creator's buy amount.
     buy_amount = get_buy_instruction_amount(logs)
     
     if buy_amount is None:
-        print("RESULT: No buy amount found - REJECT")
+        # Couldn't find/parse buy instruction in a Create transaction
+        # This is unusual - skip to be safe
         return False, None
     
+    # Check against threshold
     should_process = buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD
-    print(f"\nRESULT: Buy amount {buy_amount:,.6f} vs threshold {CREATOR_INITIAL_BUY_THRESHOLD:,} = {'PASS' if should_process else 'REJECT'}")
-    
     return should_process, buy_amount
