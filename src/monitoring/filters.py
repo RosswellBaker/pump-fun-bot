@@ -68,19 +68,16 @@ def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
                 # Found the buy instruction data!
                 # Extract amount (bytes 8-16) and max_sol_cost (bytes 16-24)
                 amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                max_sol_cost_raw = struct.unpack("<Q", decoded_data[16:24])[0]
                 
                 # Convert to decimal representation
                 scaled_amount = amount_raw / (10 ** TOKEN_DECIMALS)
                 
-                # Sanity check - amount should be less than total supply
-                if scaled_amount > 1_000_000_000:  # 1B total supply
-                    continue
-                
+                # Return the scaled amount (even if it's 0)
                 return scaled_amount
                 
-        except Exception:
-            # If we can't parse this Program data, try the next one
+        except Exception as e:
+            # Log the error for debugging and continue to the next log
+            print(f"Error parsing Program data: {e}")
             continue
     
     # If we get here, we found a Buy instruction but couldn't parse its data
