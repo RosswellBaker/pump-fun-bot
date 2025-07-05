@@ -1,180 +1,129 @@
-"""
-WebSocket monitoring for pump.fun tokens using logsSubscribe.
-"""
-
+from typing import Optional, Tuple, Dict
+from solders.signature import Signature
+from solana.rpc.async_api import AsyncClient
+import base64
+import struct
+import os
 import asyncio
-import json
-from collections.abc import Awaitable, Callable
+from collections import deque
+from time import time
 
-import websockets
-from solders.pubkey import Pubkey
+# Replace with your actual Helius RPC endpoint
+RPC_HTTP_ENDPOINT = os.getenv("RPC_HTTP_ENDPOINT")
+if not RPC_HTTP_ENDPOINT:
+    raise ValueError("RPC_HTTP_ENDPOINT environment variable not set")
 
-from monitoring.base_listener import BaseTokenListener
-from monitoring.logs_event_processor import LogsEventProcessor
-from trading.base import TokenInfo
-from monitoring.filters import should_process_token
-from utils.logger import get_logger
+rpc_client = AsyncClient(RPC_HTTP_ENDPOINT)
 
-logger = get_logger(__name__)
+# Configurable threshold for the creator's initial buy amount
+CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
+BUY_DISCRIMINATOR = 16927863322537952870  # Replace with actual value from PumpFun IDL
+AMOUNT_OFFSET = 8  # Replace with actual offset
+AMOUNT_SIZE = 8  # For u64
+TOKEN_DECIMALS = 6  # PumpFun uses 6 decimals
 
+# Rate Limiter
+class RateLimiter:
+    def __init__(self, max_requests: int, time_window: float):
+        self.max_requests = max_requests
+        self.time_window = time_window
+        self.request_times = deque()
 
-class LogsListener(BaseTokenListener):
-    """WebSocket listener for pump.fun token creation events using logsSubscribe."""
+    async def acquire(self):
+        while len(self.request_times) >= self.max_requests:
+            now = time()
+            if now - self.request_times[0] > self.time_window:
+                self.request_times.popleft()
+            else:
+                await asyncio.sleep(self.time_window - (now - self.request_times[0]))
+        self.request_times.append(time())
 
-    def __init__(self, wss_endpoint: str, pump_program: Pubkey):
-        """Initialize token listener.
+rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 
-        Args:
-            wss_endpoint: WebSocket endpoint URL
-            pump_program: Pump.fun program address
-        """
-        self.wss_endpoint = wss_endpoint
-        self.pump_program = pump_program
-        self.event_processor = LogsEventProcessor(pump_program)
-        self.ping_interval = 20  # seconds
+async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 2.0) -> Optional[Dict]:
+    """
+    Fetch transaction data using the Helius RPC endpoint.
 
-    async def listen_for_tokens(
-        self,
-        token_callback: Callable[[TokenInfo], Awaitable[None]],
-        match_string: str | None = None,
-        creator_address: str | None = None,
-    ) -> None:
-        """Listen for new token creations using logsSubscribe.
+    Args:
+        signature: Transaction signature as a string.
+        max_retries: Maximum number of retry attempts.
+        retry_delay: Delay between retries in seconds.
 
-        Args:
-            token_callback: Callback function for new tokens
-            match_string: Optional string to match in token name/symbol
-            creator_address: Optional creator address to filter by
-        """
-        while True:
-            try:
-                async with websockets.connect(self.wss_endpoint) as websocket:
-                    await self._subscribe_to_logs(websocket)
-                    ping_task = asyncio.create_task(self._ping_loop(websocket))
+    Returns:
+        Decoded transaction data if found, otherwise None.
+    """
+    await rate_limiter.acquire()
 
-                    try:
-                        while True:
-                            token_info = await self._wait_for_token_creation(websocket)
-                            if not token_info:
-                                continue
-
-                            logger.info(
-                                f"New token detected: {token_info.name} ({token_info.symbol})"
-                            )
-
-                            if match_string and not (
-                                match_string.lower() in token_info.name.lower()
-                                or match_string.lower() in token_info.symbol.lower()
-                            ):
-                                logger.info(
-                                    f"Token does not match filter '{match_string}'. Skipping..."
-                                )
-                                continue
-
-                            if (
-                                creator_address
-                                and str(token_info.user) != creator_address
-                            ):
-                                logger.info(
-                                    f"Token not created by {creator_address}. Skipping..."
-                                )
-                                continue
-
-                            await token_callback(token_info)
-
-                    except websockets.exceptions.ConnectionClosed:
-                        logger.warning("WebSocket connection closed. Reconnecting...")
-                        ping_task.cancel()
-
-            except Exception as e:
-                logger.error(f"WebSocket connection error: {str(e)}")
-                logger.info("Reconnecting in 5 seconds...")
-                await asyncio.sleep(5)
-
-    async def _subscribe_to_logs(self, websocket) -> None:
-        """Subscribe to logs mentioning the pump.fun program.
-
-        Args:
-            websocket: Active WebSocket connection
-        """
-        subscription_message = json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "logsSubscribe",
-                "params": [
-                    {"mentions": [str(self.pump_program)]},
-                    {"commitment": "processed"},
-                ],
-            }
-        )
-
-        await websocket.send(subscription_message)
-        logger.info(f"Subscribed to logs mentioning program: {self.pump_program}")
-
-        # Wait for subscription confirmation
-        response = await websocket.recv()
-        response_data = json.loads(response)
-        if "result" in response_data:
-            logger.info(f"Subscription confirmed with ID: {response_data['result']}")
-        else:
-            logger.warning(f"Unexpected subscription response: {response}")
-
-    async def _ping_loop(self, websocket) -> None:
-        """Keep connection alive with pings.
-
-        Args:
-            websocket: Active WebSocket connection
-        """
+    for attempt in range(max_retries):
         try:
-            while True:
-                await asyncio.sleep(self.ping_interval)
-                try:
-                    pong_waiter = await websocket.ping()
-                    await asyncio.wait_for(pong_waiter, timeout=10)
-                except asyncio.TimeoutError:
-                    logger.warning("Ping timeout - server not responding")
-                    # Force reconnection
-                    await websocket.close()
-                    return
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"Ping error: {str(e)}")
+            transaction_response = await rpc_client.get_transaction(
+                Signature.from_string(signature),
+                encoding="jsonParsed",
+                commitment="finalized"
+            )
 
-    async def _wait_for_token_creation(self, websocket) -> TokenInfo | None:
-        try:
-            response = await asyncio.wait_for(websocket.recv(), timeout=30)
-            data = json.loads(response)
+            if transaction_response and transaction_response.value:
+                return transaction_response.value
 
-            if "method" not in data or data["method"] != "logsNotification":
-                return None
+            await asyncio.sleep(retry_delay)
 
-            log_data = data["params"]["result"]["value"]
-            logs = log_data.get("logs", [])
-            signature = log_data.get("signature", "unknown")
-            
-            # Pass the signature to the filter function
-            should_process, creator_buy_amount = await should_process_token(signature)
-            
-            if not should_process:
-                if creator_buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
-                else:
-                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
-                return None
+        except Exception:
+            await asyncio.sleep(retry_delay)
 
-            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
-            
-            # Use the processor to extract token info
-            return self.event_processor.process_program_logs(logs, signature)
+    return None
 
-        except asyncio.TimeoutError:
-            logger.debug("No data received for 30 seconds")
-        except websockets.exceptions.ConnectionClosed:
-            logger.warning("WebSocket connection closed")
-            raise
-        except Exception as e:
-            logger.error(f"Error processing WebSocket message: {str(e)}")
+def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
+    """
+    Extract the buy instruction amount from the transaction data.
+
+    Args:
+        transaction_data: The transaction data dictionary fetched from the RPC.
+
+    Returns:
+        The buy amount as a float (in tokens), or None if not a relevant buy instruction or amount extraction fails.
+    """
+    try:
+        instructions_to_check = []
+        if "instructions" in transaction_data["transaction"]["message"]:
+            instructions_to_check.extend(transaction_data["transaction"]["message"]["instructions"])
+        if "innerInstructions" in transaction_data["meta"]:
+            for inner_instruction_list in transaction_data["meta"]["innerInstructions"]:
+                instructions_to_check.extend(inner_instruction_list["instructions"])
+
+        for instruction in instructions_to_check:
+            program_id = instruction.get("programId")
+            if program_id == "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P":  # PumpFun program ID
+                if "data" in instruction:
+                    data = instruction["data"]
+                    decoded_data = base64.b64decode(data)
+
+                    if len(decoded_data) >= AMOUNT_OFFSET + AMOUNT_SIZE:
+                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
+                        if discriminator == BUY_DISCRIMINATOR:
+                            amount_raw = struct.unpack("<Q", decoded_data[AMOUNT_OFFSET:AMOUNT_OFFSET + AMOUNT_SIZE])[0]
+                            return amount_raw / (10 ** TOKEN_DECIMALS)
 
         return None
+
+    except Exception:
+        return None
+
+async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
+    """
+    Determines whether a token should be processed based on the creator's initial buy amount.
+
+    Args:
+        signature: Transaction signature.
+
+    Returns:
+        Tuple of (should_process, creator_buy_amount).
+    """
+    transaction_data = await fetch_transaction_data(signature)
+    if not transaction_data:
+        return False, None
+
+    creator_buy_amount = extract_buy_instruction_amount(transaction_data)
+    if creator_buy_amount is None:
+        return False, None
+
+    return creator_buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD, creator_buy_amount
