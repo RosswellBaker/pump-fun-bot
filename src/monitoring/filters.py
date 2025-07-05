@@ -6,10 +6,10 @@ import struct
 from typing import Optional
 import os
 
-# Filter configuration
+# Filter configuration  
 CREATOR_INITIAL_BUY_THRESHOLD = 50_000_000  # 50 million tokens
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
-BUY_DISCRIMINATOR = 16927863322537952870  # From calculate_discriminator.py: global:buy
+BUY_DISCRIMINATOR = bytes([102, 6, 61, 18, 1, 218, 235, 234])  # Correct from research
 PUMP_TOKEN_DECIMALS = 6  # Pump.fun tokens use 6 decimals
 
 async def should_process_token(signature: str) -> tuple[bool, Optional[float]]:
@@ -33,7 +33,7 @@ async def should_process_token(signature: str) -> tuple[bool, Optional[float]]:
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "getTransaction",
+            "method": "getTransaction", 
             "params": [
                 signature,
                 {
@@ -90,9 +90,8 @@ async def should_process_token(signature: str) -> tuple[bool, Optional[float]]:
                     if len(decoded) < 16:
                         continue
                     
-                    # Check buy instruction discriminator (bytes 0-7)
-                    discriminator = struct.unpack("<Q", decoded[:8])[0]
-                    if discriminator != BUY_DISCRIMINATOR:
+                    # Check buy instruction discriminator (compare bytes directly)
+                    if decoded[:8] != BUY_DISCRIMINATOR:
                         continue
                     
                     # Extract amount field (bytes 8-15) - creator's token buy amount
