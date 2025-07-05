@@ -1,116 +1,117 @@
-from typing import List, Optional
+import asyncio
+import aiohttp
+import json
 import base64
 import struct
-import hashlib
+from typing import Optional
+import os
 
-# Configurable threshold for the creator's initial buy amount (50 million tokens)
+# Filter configuration
 CREATOR_INITIAL_BUY_THRESHOLD = 50_000_000  # 50 million tokens
-PUMP_TOKEN_DECIMALS = 6  # Pump.fun tokens use 6 decimals, not 9!
+PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+BUY_DISCRIMINATOR = 16927863322537952870  # From calculate_discriminator.py: global:buy
+PUMP_TOKEN_DECIMALS = 6  # Pump.fun tokens use 6 decimals
 
-# Calculate the correct BUY_DISCRIMINATOR using Anchor framework method
-def calculate_buy_discriminator():
-    """Calculate the correct discriminator for pump.fun buy instruction"""
-    # Anchor uses sha256('global:buy') for the buy instruction discriminator
-    hash_input = 'global:buy'.encode('utf-8')
-    hash_result = hashlib.sha256(hash_input).digest()
-    # Take first 8 bytes as little-endian u64
-    return struct.unpack('<Q', hash_result[:8])[0]
-
-# Correct discriminator calculation
-BUY_DISCRIMINATOR = calculate_buy_discriminator()
-print(f"Calculated BUY_DISCRIMINATOR: {BUY_DISCRIMINATOR}")
-
-
-def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
+async def should_process_token(signature: str) -> tuple[bool, Optional[float]]:
     """
-    Extracts the amount field from the buy instruction in the logs.
+    Fast gatekeeper filter for pump.fun tokens.
+    
+    Checks if creator's initial buy amount is reasonable (≤50M tokens).
+    Returns (should_process, buy_amount) tuple.
     
     Args:
-        logs: The logs from the transaction (from logsSubscribe).
-    
+        signature: Transaction signature from logs_listener
+        
     Returns:
-        The scaled amount as a float if found, otherwise None.
+        tuple[bool, Optional[float]]: (should_process, buy_amount_in_tokens)
     """
-    for log in logs:
-        # Look for program data logs specifically
-        if "Program data:" not in log:
-            continue
-
-        try:
-            # Extract the base64 encoded data after "Program data: "
-            parts = log.split("Program data: ")
-            if len(parts) != 2:
-                continue
+    try:
+        # Use dedicated filter RPC endpoint (Helius free) with fallback to main RPC
+        rpc_endpoint = os.getenv("FILTER_RPC_ENDPOINT") or os.getenv("SOLANA_NODE_RPC_ENDPOINT")
+        
+        # Fast RPC call to get transaction data
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [
+                signature,
+                {
+                    "encoding": "json",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0
+                }
+            ]
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                rpc_endpoint, 
+                json=payload, 
+                timeout=aiohttp.ClientTimeout(total=1.0)
+            ) as response:
+                if response.status != 200:
+                    return False, None
+                    
+                data = await response.json()
                 
-            encoded_data = parts[1].strip()
-            
-            # Decode the base64 data
-            decoded_data = base64.b64decode(encoded_data)
-            
-            # Debug: Print decoded data for troubleshooting
-            print(f"Log: {log}")
-            print(f"Decoded data length: {len(decoded_data)}")
-            print(f"Decoded data hex: {decoded_data.hex()}")
-            
-            # Ensure we have at least 16 bytes (8 for discriminator + 8 for amount)
-            if len(decoded_data) < 16:
-                print(f"Log skipped: Data too short ({len(decoded_data)} bytes)")
-                continue
-
-            # Extract and verify the discriminator (first 8 bytes)
-            discriminator_bytes = decoded_data[0:8]
-            discriminator = struct.unpack("<Q", discriminator_bytes)[0]
-            
-            print(f"Found discriminator: {discriminator}")
-            print(f"Expected discriminator: {BUY_DISCRIMINATOR}")
-            
-            if discriminator != BUY_DISCRIMINATOR:
-                print(f"Log skipped: Discriminator {discriminator} does not match BUY_DISCRIMINATOR {BUY_DISCRIMINATOR}")
-                continue
-
-            # Extract the amount field (bytes 8-15, according to IDL structure)
-            amount_bytes = decoded_data[8:16]
-            amount_raw = struct.unpack("<Q", amount_bytes)[0]
-            
-            # Scale the amount using pump.fun's 6 decimals
-            scaled_amount = amount_raw / (10 ** PUMP_TOKEN_DECIMALS)
-
-            # Debug: Log the extracted amount
-            print(f"Raw amount: {amount_raw}")
-            print(f"Scaled amount: {scaled_amount}")
-
-            return scaled_amount
-            
-        except Exception as e:
-            print(f"Error decoding log: {e}")
-            print(f"Problematic log: {log}")
-            continue
-
-    # If no valid buy instruction is found, return None
-    print("No valid buy instruction found in logs")
-    return None
-
-
-def should_process_token(logs: List[str]) -> bool:
-    """
-    Determines whether a token should be processed based on the creator's initial buy amount.
-    
-    Args:
-        logs: The logs from the transaction.
-    
-    Returns:
-        True if the token should be processed, False otherwise.
-    """
-    buy_amount = get_buy_instruction_amount(logs)
-    
-    if buy_amount is None:
-        print("No valid buy instruction found.")
-        return False
-
-    if buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD:
-        print(f"✅ Token PASSED filter: Buy amount {buy_amount:,.2f} is <= threshold {CREATOR_INITIAL_BUY_THRESHOLD:,}")
-        return True
-    else:
-        print(f"❌ Token FAILED filter: Buy amount {buy_amount:,.2f} exceeds threshold {CREATOR_INITIAL_BUY_THRESHOLD:,}")
-        return False
-    
+                # Check if transaction exists
+                if not data.get("result"):
+                    return False, None
+                
+                # Extract transaction instructions
+                transaction = data["result"]["transaction"]
+                message = transaction["message"]
+                instructions = message["instructions"]
+                account_keys = message["accountKeys"]
+                
+                # Find pump.fun buy instruction
+                for instruction in instructions:
+                    # Check if instruction is for pump.fun program
+                    program_idx = instruction.get("programIdIndex")
+                    if program_idx is None or program_idx >= len(account_keys):
+                        continue
+                        
+                    if account_keys[program_idx] != PUMP_PROGRAM_ID:
+                        continue
+                    
+                    # Get instruction data
+                    instruction_data = instruction.get("data", "")
+                    if not instruction_data:
+                        continue
+                    
+                    # Decode base64 instruction data
+                    try:
+                        decoded = base64.b64decode(instruction_data)
+                    except:
+                        continue
+                        
+                    # Need at least 16 bytes (8 discriminator + 8 amount)
+                    if len(decoded) < 16:
+                        continue
+                    
+                    # Check buy instruction discriminator (bytes 0-7)
+                    discriminator = struct.unpack("<Q", decoded[:8])[0]
+                    if discriminator != BUY_DISCRIMINATOR:
+                        continue
+                    
+                    # Extract amount field (bytes 8-15) - creator's token buy amount
+                    amount_raw = struct.unpack("<Q", decoded[8:16])[0]
+                    
+                    # Scale by 6 decimals to get actual token amount
+                    amount_tokens = amount_raw / (10 ** PUMP_TOKEN_DECIMALS)
+                    
+                    # Apply filter: allow if creator bought ≤ 50M tokens
+                    should_process = amount_tokens <= CREATOR_INITIAL_BUY_THRESHOLD
+                    
+                    return should_process, amount_tokens
+                
+                # No buy instruction found
+                return False, None
+                
+    except asyncio.TimeoutError:
+        # RPC timeout - skip token to maintain speed
+        return False, None
+    except Exception:
+        # Any other error - skip token to maintain stability
+        return False, None
