@@ -155,17 +155,16 @@ class LogsListener(BaseTokenListener):
             signature = log_data.get("signature", "unknown")
             
             # === FILTER GATEKEEPER ===
-            
             should_process, buy_amount = should_process_token(logs, signature)
             
             if not should_process:
                 if buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Creator's initial buy amount ({buy_amount:,.2f}) exceeds threshold.")
+                    logger.info(f"Transaction {signature} skipped: Creator's initial buy amount ({buy_amount}) exceeds threshold.")
                 else:
                     logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
                 return None
 
-            logger.info(f"Transaction {signature} passed filter: Creator's initial buy amount is {buy_amount:,.2f}.")
+            logger.info(f"Transaction {signature} passed filter: Creator's initial buy amount is {buy_amount}.")
             # === END FILTER ===
             
             # Use the processor to extract token info
