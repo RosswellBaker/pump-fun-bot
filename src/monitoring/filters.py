@@ -1,71 +1,65 @@
-"""
-Filter for pump.fun tokens based on creator's initial buy amount.
-Follows the same pattern as logs_event_processor.py
-"""
-
+from typing import List, Optional
 import base64
 import struct
-from typing import Optional, List
 
-# Filter configuration
-CREATOR_INITIAL_BUY_THRESHOLD = 50_000_000  # 50 million tokens
-BUY_DISCRIMINATOR = bytes([102, 6, 61, 18, 1, 218, 235, 234])  # Buy instruction discriminator
-PUMP_TOKEN_DECIMALS = 6  # Pump.fun tokens use 6 decimals
+# Configurable threshold for the creator's initial buy amount
+CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
+BUY_DISCRIMINATOR = 16927863322537952870  # Global constant for "buy" instruction
+TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 
-def should_process_token(logs: List[str], signature: str) -> tuple[bool, Optional[float]]:
+def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     """
-    Filter pump.fun tokens based on creator's initial buy amount.
-    
-    Follows the same pattern as logs_event_processor.py - processes logs directly
-    to find buy instructions and extract the amount field.
-    
+    Extracts the amount field from the buy instruction in the logs.
+
     Args:
-        logs: List of log strings from logsSubscribe notification  
-        signature: Transaction signature (for logging purposes)
-        
+        logs: The logs from the transaction.
+
     Returns:
-        tuple[bool, Optional[float]]: (should_process, buy_amount_in_tokens)
-            - should_process: True if token should be processed, False to skip
-            - buy_amount_in_tokens: Creator's buy amount in tokens, None if not found
+        The scaled amount as a float if found, otherwise None.
     """
-    try:
-        # Process logs directly (same pattern as event processor)
-        for log in logs:
-            # Look for program data entries (same as event processor)
-            if "Program data:" not in log:
+    for log in logs:
+        if "Program data:" not in log:
+            continue
+
+        try:
+            # Extract and decode the program data from the log
+            encoded_data = log.split("Program data: ")[1].strip()
+            decoded_data = base64.b64decode(encoded_data)
+            
+            # Check if we have enough data for a buy instruction
+            if len(decoded_data) < 24:
                 continue
-                
-            try:
-                # Extract and decode program data (same as event processor)
-                encoded_data = log.split(": ")[1]
-                decoded_data = base64.b64decode(encoded_data)
-                
-                # Need at least 16 bytes for buy instruction (8 discriminator + 8 amount)
-                if len(decoded_data) < 16:
-                    continue
-                
-                # Check if this is a buy instruction (compare discriminator bytes directly)
-                if decoded_data[:8] != BUY_DISCRIMINATOR:
-                    continue
-                
-                # Extract amount field from buy instruction (bytes 8-15)
-                amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                
-                # Scale by pump.fun decimals to get actual token amount
-                amount_tokens = amount_raw / (10 ** PUMP_TOKEN_DECIMALS)
-                
-                # Apply filter logic: allow if creator bought ≤ threshold
-                should_process = amount_tokens <= CREATOR_INITIAL_BUY_THRESHOLD
-                
-                return should_process, amount_tokens
-                
-            except Exception:
-                # Skip malformed log entries
-                continue
-        
-        # No buy instruction found in any log entry
-        return False, None
-        
-    except Exception:
-        # Any error - skip token to maintain stability
-        return False, None
+            
+            # Check the discriminator to ensure this is a buy instruction
+            discriminator = struct.unpack("<Q", decoded_data[:8])[0]
+            
+            if discriminator != BUY_DISCRIMINATOR:
+                continue  # Not a buy instruction, skip
+            
+            # Extract the amount field (bytes 8-16)
+            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
+            scaled_amount = amount_raw / (10 ** TOKEN_DECIMALS)
+
+            return scaled_amount
+        except Exception:
+            continue
+
+    # If no valid buy instruction is found, return None
+    return None
+
+
+def should_process_token(logs: List[str]) -> bool:
+    """
+    Determines whether a token should be processed based on the creator's initial buy amount.
+
+    Args:
+        logs: The logs from the transaction.
+
+    Returns:
+        True if the token should be processed, False otherwise.
+    """
+    buy_amount = get_buy_instruction_amount(logs)
+    if buy_amount is None:
+        return False
+
+    return buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD
