@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 import base64
 import struct
 
@@ -48,18 +48,21 @@ def get_buy_instruction_amount(logs: List[str]) -> Optional[float]:
     return None
 
 
-def should_process_token(logs: List[str]) -> bool:
+def should_process_token(logs: List[str], signature: str) -> Tuple[bool, Optional[float]]:
     """
     Determines whether a token should be processed based on the creator's initial buy amount.
 
     Args:
         logs: The logs from the transaction.
+        signature: Transaction signature for logging.
 
     Returns:
-        True if the token should be processed, False otherwise.
+        Tuple of (should_process, buy_amount)
     """
     buy_amount = get_buy_instruction_amount(logs)
+    
     if buy_amount is None:
-        return False
-
-    return buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD
+        return False, None
+    
+    should_process = buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD
+    return should_process, buy_amount
