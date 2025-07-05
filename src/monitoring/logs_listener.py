@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 import websockets
 from solders.pubkey import Pubkey
 
-from monitoring.filters import get_buy_instruction_amount, should_process_token
+from monitoring.filters import should_process_token
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
@@ -146,22 +146,17 @@ class LogsListener(BaseTokenListener):
         try:
             response = await asyncio.wait_for(websocket.recv(), timeout=30)
             data = json.loads(response)
-            
+
             if "method" not in data or data["method"] != "logsNotification":
                 return None
-            
+
             log_data = data["params"]["result"]["value"]
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
             
-            if signature == "unknown":
-                logger.warning("Transaction skipped: Signature is unknown.")
-                return None
-            
             # === FILTER GATEKEEPER ===
-            from monitoring.filters import should_process_token
             
-            should_process, buy_amount = await should_process_token(signature)
+            should_process, buy_amount = should_process_token(logs, signature)
             
             if not should_process:
                 if buy_amount is not None:
@@ -173,9 +168,9 @@ class LogsListener(BaseTokenListener):
             logger.info(f"Transaction {signature} passed filter: Creator's initial buy amount is {buy_amount:,.2f}.")
             # === END FILTER ===
             
-            # Use the processor to extract token info (ORIGINAL LOGIC CONTINUES EXACTLY AS IS)
+            # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
-        
+
         except asyncio.TimeoutError:
             logger.debug("No data received for 30 seconds")
         except websockets.exceptions.ConnectionClosed:
@@ -183,5 +178,5 @@ class LogsListener(BaseTokenListener):
             raise
         except Exception as e:
             logger.error(f"Error processing WebSocket message: {str(e)}")
-        
+
         return None
