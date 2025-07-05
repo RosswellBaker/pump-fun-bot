@@ -9,11 +9,11 @@ from collections import deque
 from time import time
 
 # Replace with your actual Helius RPC endpoint
-FILTER_RPC_ENDPOIN = os.getenv("RPC_HTTP_ENDPOINT")
-if not FILTER_RPC_ENDPOIN:
-    raise ValueError("RPC_HTTP_ENDPOINT environment variable not set")
+FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
+if not FILTER_RPC_ENDPOINT:
+    raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
 
-rpc_client = AsyncClient(FILTER_RPC_ENDPOIN)
+rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
 # Configurable threshold for the creator's initial buy amount
 CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
