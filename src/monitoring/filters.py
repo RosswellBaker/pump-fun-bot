@@ -3,7 +3,6 @@ from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
 import base64
 import base58
-import hashlib
 import struct
 import os
 import asyncio
@@ -18,15 +17,12 @@ if not FILTER_RPC_ENDPOINT:
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
 # Pump.fun constants
-CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
+CREATOR_BUY_AMOUNT_THRESHOLD = 50000000  # 50 million tokens
 TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
-# Calculate the correct discriminator for "global:buy" instruction
-def get_discriminator(name: str) -> bytes:
-    return hashlib.sha256(f"global:{name}".encode()).digest()[:8]
-
-BUY_DISCRIMINATOR = get_discriminator("buy")
+# Direct hardcoded buy instruction discriminator from the IDL
+BUY_DISCRIMINATOR = bytes([102, 6, 61, 18, 1, 218, 235, 234])
 
 # Rate Limiter
 class RateLimiter:
@@ -49,30 +45,46 @@ rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 0.5) -> Optional[Dict]:
     """
     Fetch transaction data using the configured RPC endpoint.
+    
+    Args:
+        signature: Transaction signature as a string.
+        max_retries: Maximum number of retry attempts.
+        retry_delay: Delay between retries in seconds.
+        
+    Returns:
+        Decoded transaction data if found, otherwise None.
     """
     await rate_limiter.acquire()
-
+    
     for attempt in range(max_retries):
         try:
+            # Critical fix: Add maxSupportedTransactionVersion parameter
             transaction_response = await rpc_client.get_transaction(
                 Signature.from_string(signature),
                 encoding="jsonParsed",
-                commitment="confirmed"
+                commitment="confirmed",
+                maxSupportedTransactionVersion=0  # Required for newer Solana transactions
             )
-
+            
             if transaction_response and transaction_response.value:
                 return transaction_response.value
-
+                
             await asyncio.sleep(retry_delay)
-
+            
         except Exception:
             await asyncio.sleep(retry_delay)
-
+            
     return None
 
 def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
     """
     Extract the buy instruction amount from transaction data.
+    
+    Args:
+        transaction_data: The transaction data dictionary fetched from the RPC.
+        
+    Returns:
+        The buy amount as a float (in tokens), or None if not a relevant buy instruction or amount extraction fails.
     """
     try:
         instructions_to_check = []
@@ -85,7 +97,7 @@ def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
         if "innerInstructions" in transaction_data["meta"]:
             for inner_instruction_list in transaction_data["meta"]["innerInstructions"]:
                 instructions_to_check.extend(inner_instruction_list["instructions"])
-
+                
         # Check each instruction
         for instruction in instructions_to_check:
             program_id = instruction.get("programId")
@@ -93,34 +105,51 @@ def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
             # Only check instructions from the pump.fun program
             if program_id == PUMP_PROGRAM_ID:
                 if "data" in instruction:
-                    # Base58 decode the instruction data
                     data = instruction["data"]
-                    decoded_data = base58.b58decode(data)
+                    decoded_data = None
+                    
+                    # Try both base64 and base58 decoding
+                    try:
+                        # Try base64 first (most common in jsonParsed encoding)
+                        decoded_data = base64.b64decode(data)
+                    except:
+                        try:
+                            # Fallback to base58 if base64 fails
+                            decoded_data = base58.b58decode(data)
+                        except:
+                            continue
                     
                     # Ensure minimum length for discriminator + amount
-                    if len(decoded_data) >= 16:
+                    if decoded_data and len(decoded_data) >= 16:  # 8 bytes discriminator + 8 bytes amount
                         # Compare discriminator (first 8 bytes)
                         if decoded_data[:8] == BUY_DISCRIMINATOR:
-                            # Extract amount (next 8 bytes after discriminator)
-                            amount_raw = int.from_bytes(decoded_data[8:16], byteorder="little")
+                            # Extract amount (next 8 bytes after discriminator) as u64
+                            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
                             # Convert from raw units to token units (6 decimals)
                             return amount_raw / (10 ** TOKEN_DECIMALS)
-
+        
         return None
+        
     except Exception:
         return None
 
 async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
     Determines whether a token should be processed based on the creator's initial buy amount.
+    
+    Args:
+        signature: Transaction signature.
+        
+    Returns:
+        Tuple of (should_process, creator_buy_amount).
     """
     transaction_data = await fetch_transaction_data(signature)
     if not transaction_data:
         return False, None
-
+        
     creator_buy_amount = extract_buy_instruction_amount(transaction_data)
     if creator_buy_amount is None:
         return False, None
-
-    # Return True if amount is below threshold, False otherwise
-    return creator_buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD, creator_buy_amount
+        
+    # Return True if amount is below or equal to threshold, False otherwise
+    return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
