@@ -2,25 +2,33 @@ from typing import Optional, Tuple, Dict
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
 import base64
+import base58
+import hashlib
 import struct
 import os
 import asyncio
 from collections import deque
 from time import time
 
-# Replace with your actual Helius RPC endpoint
+# Configure RPC endpoint
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
 if not FILTER_RPC_ENDPOINT:
     raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
 
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
-# Configurable threshold for the creator's initial buy amount
+# Pump.fun constants
 CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
-BUY_DISCRIMINATOR = 16927863322537952870  # Replace with actual value from PumpFun IDL
-AMOUNT_OFFSET = 8  # Replace with actual offset
-AMOUNT_SIZE = 8  # For u64
-TOKEN_DECIMALS = 6  # PumpFun uses 6 decimals
+TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
+PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+
+# Calculate the correct discriminator for "buy" instruction
+def calculate_discriminator(instruction_name):
+    sha = hashlib.sha256()
+    sha.update(instruction_name.encode("utf-8"))
+    return sha.digest()[:8]
+
+BUY_DISCRIMINATOR = calculate_discriminator("buy")
 
 # Rate Limiter
 class RateLimiter:
@@ -40,17 +48,9 @@ class RateLimiter:
 
 rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 
-async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 2.0) -> Optional[Dict]:
+async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 0.5) -> Optional[Dict]:
     """
-    Fetch transaction data using the Helius RPC endpoint.
-
-    Args:
-        signature: Transaction signature as a string.
-        max_retries: Maximum number of retry attempts.
-        retry_delay: Delay between retries in seconds.
-
-    Returns:
-        Decoded transaction data if found, otherwise None.
+    Fetch transaction data using the configured RPC endpoint.
     """
     await rate_limiter.acquire()
 
@@ -59,12 +59,13 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
             transaction_response = await rpc_client.get_transaction(
                 Signature.from_string(signature),
                 encoding="jsonParsed",
-                commitment="finalized"
+                commitment="confirmed"
             )
 
             if transaction_response and transaction_response.value:
                 return transaction_response.value
 
+            # Short delay before retry
             await asyncio.sleep(retry_delay)
 
         except Exception:
@@ -74,49 +75,47 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
 
 def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
     """
-    Extract the buy instruction amount from the transaction data.
-
-    Args:
-        transaction_data: The transaction data dictionary fetched from the RPC.
-
-    Returns:
-        The buy amount as a float (in tokens), or None if not a relevant buy instruction or amount extraction fails.
+    Extract the buy instruction amount from transaction data.
     """
     try:
         instructions_to_check = []
+        
+        # Add main instructions
         if "instructions" in transaction_data["transaction"]["message"]:
             instructions_to_check.extend(transaction_data["transaction"]["message"]["instructions"])
+        
+        # Add inner instructions if available
         if "innerInstructions" in transaction_data["meta"]:
             for inner_instruction_list in transaction_data["meta"]["innerInstructions"]:
                 instructions_to_check.extend(inner_instruction_list["instructions"])
 
+        # Check each instruction
         for instruction in instructions_to_check:
             program_id = instruction.get("programId")
-            if program_id == "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P":  # PumpFun program ID
+            
+            # Only check instructions from the pump.fun program
+            if program_id == PUMP_PROGRAM_ID:
                 if "data" in instruction:
+                    # Base58 decode the instruction data
                     data = instruction["data"]
-                    decoded_data = base64.b64decode(data)
-
-                    if len(decoded_data) >= AMOUNT_OFFSET + AMOUNT_SIZE:
-                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        if discriminator == BUY_DISCRIMINATOR:
-                            amount_raw = struct.unpack("<Q", decoded_data[AMOUNT_OFFSET:AMOUNT_OFFSET + AMOUNT_SIZE])[0]
+                    decoded_data = base58.b58decode(data)
+                    
+                    # Ensure minimum length for discriminator + amount
+                    if len(decoded_data) >= 16:
+                        # Compare discriminator (first 8 bytes)
+                        if decoded_data[:8] == BUY_DISCRIMINATOR:
+                            # Extract amount (next 8 bytes after discriminator)
+                            amount_raw = int.from_bytes(decoded_data[8:16], byteorder="little")
+                            # Convert from raw units to token units (6 decimals)
                             return amount_raw / (10 ** TOKEN_DECIMALS)
 
         return None
-
     except Exception:
         return None
 
 async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
     Determines whether a token should be processed based on the creator's initial buy amount.
-
-    Args:
-        signature: Transaction signature.
-
-    Returns:
-        Tuple of (should_process, creator_buy_amount).
     """
     transaction_data = await fetch_transaction_data(signature)
     if not transaction_data:
@@ -126,4 +125,5 @@ async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     if creator_buy_amount is None:
         return False, None
 
+    # Return True if amount is below threshold, False otherwise
     return creator_buy_amount <= CREATOR_INITIAL_BUY_THRESHOLD, creator_buy_amount
