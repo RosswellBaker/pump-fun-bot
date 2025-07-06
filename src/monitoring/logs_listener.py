@@ -58,6 +58,20 @@ class LogsListener(BaseTokenListener):
                             if not token_info:
                                 continue
 
+                            # Apply our filter here - after getting token_info but before logging
+                            should_process, creator_buy_amount = await should_process_token(token_info.signature)
+                            if not should_process:
+                                if creator_buy_amount is not None:
+                                    logger.info(f"Token {token_info.symbol} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
+                                else:
+                                    logger.info(f"Token {token_info.symbol} skipped: Could not determine creator's buy amount.")
+                                continue
+
+                            logger.info(f"Token {token_info.symbol} passed filter: Creator's buy amount is {creator_buy_amount}.")
+                            logger.info(
+                                f"New token detected: {token_info.name} ({token_info.symbol})"
+                            )
+
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
                             )
@@ -153,24 +167,8 @@ class LogsListener(BaseTokenListener):
             log_data = data["params"]["result"]["value"]
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
-            
-            # Quick check - if definitely not a token creation, skip early
-            if not any("Program log: Instruction: Create" in log for log in logs):
-                return None
-                
-            # Pass the signature to the filter function - KEEP ORIGINAL ORDER
-            should_process, creator_buy_amount = await should_process_token(signature)
-            
-            if not should_process:
-                if creator_buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
-                else:
-                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
-                return None
 
-            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
-            
-            # Use the processor to extract token info - KEEP ORIGINAL ORDER
+            # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
 
         except asyncio.TimeoutError:
