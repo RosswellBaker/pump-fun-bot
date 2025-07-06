@@ -22,13 +22,11 @@ CREATOR_INITIAL_BUY_THRESHOLD = 50000000  # 50 million tokens
 TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
-# Calculate the correct discriminator for "buy" instruction
-def calculate_discriminator(instruction_name):
-    sha = hashlib.sha256()
-    sha.update(instruction_name.encode("utf-8"))
-    return sha.digest()[:8]
+# Calculate the correct discriminator for "global:buy" instruction
+def get_discriminator(name: str) -> bytes:
+    return hashlib.sha256(f"global:{name}".encode()).digest()[:8]
 
-BUY_DISCRIMINATOR = calculate_discriminator("buy")
+BUY_DISCRIMINATOR = get_discriminator("buy")
 
 # Rate Limiter
 class RateLimiter:
@@ -65,7 +63,6 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
             if transaction_response and transaction_response.value:
                 return transaction_response.value
 
-            # Short delay before retry
             await asyncio.sleep(retry_delay)
 
         except Exception:
