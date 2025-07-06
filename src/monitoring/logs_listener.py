@@ -154,31 +154,24 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
             
-            # Quick check to see if this is even a token creation transaction
-            # This saves us from processing tons of non-creation transactions
+            # Quick check - if definitely not a token creation, skip early
             if not any("Program log: Instruction: Create" in log for log in logs):
                 return None
                 
-            # Process to get token info - this confirms it's actually a token creation
-            token_info = self.event_processor.process_program_logs(logs, signature)
-            
-            # If it's not a valid token creation, skip
-            if not token_info:
-                return None
-                
-            # NOW apply your filter - only for confirmed token creations
+            # Pass the signature to the filter function - KEEP ORIGINAL ORDER
             should_process, creator_buy_amount = await should_process_token(signature)
             
             if not should_process:
                 if creator_buy_amount is not None:
-                    logger.info(f"Token {token_info.symbol} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
+                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
                 else:
-                    logger.info(f"Token {token_info.symbol} skipped: Could not determine creator's buy amount.")
+                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
                 return None
 
-            logger.info(f"Token {token_info.symbol} passed filter: Creator's buy amount is {creator_buy_amount}.")
+            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
             
-            return token_info
+            # Use the processor to extract token info - KEEP ORIGINAL ORDER
+            return self.event_processor.process_program_logs(logs, signature)
 
         except asyncio.TimeoutError:
             logger.debug("No data received for 30 seconds")
