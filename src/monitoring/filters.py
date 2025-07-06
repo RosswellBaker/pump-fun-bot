@@ -136,20 +136,19 @@ def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
 async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
     Determines whether a token should be processed based on the creator's initial buy amount.
-    
-    Args:
-        signature: Transaction signature.
-        
-    Returns:
-        Tuple of (should_process, creator_buy_amount).
     """
     transaction_data = await fetch_transaction_data(signature)
     if not transaction_data:
         return False, None
-        
+
+    # Quick pre-check: Only process creation transactions
+    logs = transaction_data.get("meta", {}).get("logMessages", [])
+    if not any("Program log: Instruction: Create" in log for log in logs):
+        return False, None
+
     creator_buy_amount = extract_buy_instruction_amount(transaction_data)
     if creator_buy_amount is None:
         return False, None
-        
-    # Return True if amount is below or equal to threshold, False otherwise
+
+    # Return True if amount is below threshold, False otherwise
     return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
