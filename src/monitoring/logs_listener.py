@@ -58,20 +58,6 @@ class LogsListener(BaseTokenListener):
                             if not token_info:
                                 continue
 
-                            # Apply our filter here - after getting token_info but before logging
-                            should_process, creator_buy_amount = await should_process_token(token_info.signature)
-                            if not should_process:
-                                if creator_buy_amount is not None:
-                                    logger.info(f"Token {token_info.symbol} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
-                                else:
-                                    logger.info(f"Token {token_info.symbol} skipped: Could not determine creator's buy amount.")
-                                continue
-
-                            logger.info(f"Token {token_info.symbol} passed filter: Creator's buy amount is {creator_buy_amount}.")
-                            logger.info(
-                                f"New token detected: {token_info.name} ({token_info.symbol})"
-                            )
-
                             logger.info(
                                 f"New token detected: {token_info.name} ({token_info.symbol})"
                             )
