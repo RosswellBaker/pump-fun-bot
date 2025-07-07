@@ -160,12 +160,13 @@ class LogsListener(BaseTokenListener):
             should_process, creator_buy_amount = await should_process_token(signature)
         
             if not should_process:
-                # Log filter decision and exit early
-                if creator_buy_amount is None:
-                    logger.info(f"🔍 Transaction {signature} skipped: Failed to decode or not a creation transaction.")
+                if creator_buy_amount is not None:
+                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
                 else:
-                    logger.info(f"❌ Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount:,.0f} tokens) exceeds threshold.")
+                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
                 return None
+
+            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
 
             # Log successful filter result
             if creator_buy_amount == 0.0:
