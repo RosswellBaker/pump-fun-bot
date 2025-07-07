@@ -142,11 +142,6 @@ async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     if not transaction_data:
         return False, None
 
-    # Quick pre-check: Only process creation transactions
-    logs = transaction_data.get("meta", {}).get("logMessages", [])
-    if not any("Program log: Instruction: Create" in log for log in logs):
-        return False, None
-
     creator_buy_amount = extract_buy_instruction_amount(transaction_data)
     
     # FIXED: If no buy instruction found, treat as 0 (creator didn't buy = PERFECT TARGET)

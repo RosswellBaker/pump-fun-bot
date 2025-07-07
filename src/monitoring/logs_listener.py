@@ -154,8 +154,9 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # FILTER INSERTION: Check if we should process this token
-            # Uses the signature but doesn't modify logs or signature variables
+            if not any("Program log: Instruction: Create" in log for log in logs):
+                return None
+            
             should_process, creator_buy_amount = await should_process_token(signature)
         
             if not should_process:
