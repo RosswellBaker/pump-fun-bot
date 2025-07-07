@@ -154,17 +154,25 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # Pass the signature to the filter function
+            # FILTER INSERTION: Check if we should process this token
+            # Uses the signature but doesn't modify logs or signature variables
             should_process, creator_buy_amount = await should_process_token(signature)
         
             if not should_process:
-                if creator_buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
+                # Log filter decision and exit early
+                if creator_buy_amount is None:
+                    logger.info(f"🔍 Transaction {signature} skipped: Failed to decode or not a creation transaction.")
                 else:
-                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
+                    logger.info(f"❌ Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount:,.0f} tokens) exceeds threshold.")
                 return None
 
-            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
+            # Log successful filter result
+            if creator_buy_amount == 0.0:
+                logger.info(f"🎯 Transaction {signature} PASSED: Creator made NO initial purchase - PERFECT SNIPING TARGET! 🚀")
+            elif creator_buy_amount <= 10000000:
+                logger.info(f"✅ Transaction {signature} PASSED: Creator's small buy ({creator_buy_amount:,.0f} tokens) - EXCELLENT target!")
+            else:
+                logger.info(f"✅ Transaction {signature} PASSED: Creator's buy amount ({creator_buy_amount:,.0f} tokens) within threshold.")
 
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)

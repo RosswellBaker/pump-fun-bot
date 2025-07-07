@@ -21,8 +21,8 @@ CREATOR_BUY_AMOUNT_THRESHOLD = 50000000  # 50 million tokens
 TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
-# Direct hardcoded buy instruction discriminator from the IDL
-BUY_DISCRIMINATOR = bytes([102, 6, 61, 18, 1, 218, 235, 234])
+# FIXED: Use correct discriminator from repository (calculate_discriminator.py)
+BUY_DISCRIMINATOR = 16927863322537952870  # global:buy discriminator
 
 # Rate Limiter
 class RateLimiter:
@@ -121,8 +121,9 @@ def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
                     
                     # Ensure minimum length for discriminator + amount
                     if decoded_data and len(decoded_data) >= 16:  # 8 bytes discriminator + 8 bytes amount
-                        # Compare discriminator (first 8 bytes)
-                        if decoded_data[:8] == BUY_DISCRIMINATOR:
+                        # FIXED: Compare discriminator as integer (same as repository)
+                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
+                        if discriminator == BUY_DISCRIMINATOR:
                             # Extract amount (next 8 bytes after discriminator) as u64
                             amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
                             # Convert from raw units to token units (6 decimals)
@@ -147,8 +148,10 @@ async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
         return False, None
 
     creator_buy_amount = extract_buy_instruction_amount(transaction_data)
+    
+    # FIXED: If no buy instruction found, treat as 0 (creator didn't buy = PERFECT TARGET)
     if creator_buy_amount is None:
-        return False, None
+        creator_buy_amount = 0.0
 
-    # Return True if amount is below threshold, False otherwise
+    # Return True if amount is below or equal to threshold, False otherwise
     return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
