@@ -154,7 +154,9 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
+            # Only proceed if this transaction includes a Pump.fun 'Create' instruction
             if not any("Program log: Instruction: Create" in log for log in logs):
+                # Not a token creation – ignore
                 return None
             
             should_process, creator_buy_amount = await should_process_token(signature)
@@ -167,14 +169,6 @@ class LogsListener(BaseTokenListener):
                 return None
 
             logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
-
-            # Log successful filter result
-            if creator_buy_amount == 0.0:
-                logger.info(f"🎯 Transaction {signature} PASSED: Creator made NO initial purchase - PERFECT SNIPING TARGET! 🚀")
-            elif creator_buy_amount <= 10000000:
-                logger.info(f"✅ Transaction {signature} PASSED: Creator's small buy ({creator_buy_amount:,.0f} tokens) - EXCELLENT target!")
-            else:
-                logger.info(f"✅ Transaction {signature} PASSED: Creator's buy amount ({creator_buy_amount:,.0f} tokens) within threshold.")
 
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)

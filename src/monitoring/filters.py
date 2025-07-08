@@ -1,30 +1,26 @@
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
 import base64
-import base58
 import struct
 import os
 import asyncio
 from collections import deque
 from time import time
 
-# Configure RPC endpoint
+# ————————————— INITIAL SETUP —————————————
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
 if not FILTER_RPC_ENDPOINT:
     raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
 
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
-
-# Pump.fun constants
-CREATOR_BUY_AMOUNT_THRESHOLD = 50000000  # 50 million tokens
-TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
+RATE_LIMIT = 8  # per second
+TOKEN_DECIMALS = 6
+CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000  # raw units (50M base tokens)
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+BUY_DISCRIMINATOR = 16927863322537952870  # u64 LE for Anchor global:buy
 
-# FIXED: Use correct discriminator from repository (calculate_discriminator.py)
-BUY_DISCRIMINATOR = 16927863322537952870  # global:buy discriminator
-
-# Rate Limiter
+# ————————————— RATE LIMITER —————————————
 class RateLimiter:
     def __init__(self, max_requests: int, time_window: float):
         self.max_requests = max_requests
@@ -40,113 +36,59 @@ class RateLimiter:
                 await asyncio.sleep(self.time_window - (now - self.request_times[0]))
         self.request_times.append(time())
 
-rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
+rate_limiter = RateLimiter(max_requests=RATE_LIMIT, time_window=1.0)
 
+# ————————————— FETCH TRANSACTION —————————————
 async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 0.5) -> Optional[Dict]:
-    """
-    Fetch transaction data using the configured RPC endpoint.
-    
-    Args:
-        signature: Transaction signature as a string.
-        max_retries: Maximum number of retry attempts.
-        retry_delay: Delay between retries in seconds.
-        
-    Returns:
-        Decoded transaction data if found, otherwise None.
-    """
     await rate_limiter.acquire()
-    
-    for attempt in range(max_retries):
+    for _ in range(max_retries):
         try:
-            # Critical fix: Add maxSupportedTransactionVersion parameter
-            transaction_response = await rpc_client.get_transaction(
+            resp = await rpc_client.get_transaction(
                 Signature.from_string(signature),
-                encoding="jsonParsed",
+                encoding="base64",  # blockSubscribe uses base64 encoding
                 commitment="confirmed",
-                maxSupportedTransactionVersion=0  # Required for newer Solana transactions
+                transaction_details="full",
+                max_supported_transaction_version=0
             )
-            
-            if transaction_response and transaction_response.value:
-                return transaction_response.value
-                
-            await asyncio.sleep(retry_delay)
-            
         except Exception:
             await asyncio.sleep(retry_delay)
-            
+            continue
+        value = getattr(resp, "value", None)
+        if value:
+            return value
+        await asyncio.sleep(retry_delay)
     return None
 
-def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
-    """
-    Extract the buy instruction amount from transaction data.
-    
-    Args:
-        transaction_data: The transaction data dictionary fetched from the RPC.
-        
-    Returns:
-        The buy amount as a float (in tokens), or None if not a relevant buy instruction or amount extraction fails.
-    """
-    try:
-        instructions_to_check = []
-        
-        # Add main instructions
-        if "instructions" in transaction_data["transaction"]["message"]:
-            instructions_to_check.extend(transaction_data["transaction"]["message"]["instructions"])
-        
-        # Add inner instructions if available
-        if "innerInstructions" in transaction_data["meta"]:
-            for inner_instruction_list in transaction_data["meta"]["innerInstructions"]:
-                instructions_to_check.extend(inner_instruction_list["instructions"])
-                
-        # Check each instruction
-        for instruction in instructions_to_check:
-            program_id = instruction.get("programId")
-            
-            # Only check instructions from the pump.fun program
-            if program_id == PUMP_PROGRAM_ID:
-                if "data" in instruction:
-                    data = instruction["data"]
-                    decoded_data = None
-                    
-                    # Try both base64 and base58 decoding
-                    try:
-                        # Try base64 first (most common in jsonParsed encoding)
-                        decoded_data = base64.b64decode(data)
-                    except:
-                        try:
-                            # Fallback to base58 if base64 fails
-                            decoded_data = base58.b58decode(data)
-                        except:
-                            continue
-                    
-                    # Ensure minimum length for discriminator + amount
-                    if decoded_data and len(decoded_data) >= 16:  # 8 bytes discriminator + 8 bytes amount
-                        # FIXED: Compare discriminator as integer (same as repository)
-                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        if discriminator == BUY_DISCRIMINATOR:
-                            # Extract amount (next 8 bytes after discriminator) as u64
-                            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                            # Convert from raw units to token units (6 decimals)
-                            return amount_raw / (10 ** TOKEN_DECIMALS)
-        
+# ————————————— PARSE BUY INSTRUCTION —————————————
+def extract_buy_amount_from_raw(raw: bytes) -> Optional[float]:
+    if len(raw) < 16:
         return None
-        
-    except Exception:
+    if struct.unpack("<Q", raw[:8])[0] != BUY_DISCRIMINATOR:
         return None
+    amount_raw = struct.unpack("<Q", raw[8:16])[0]
+    return amount_raw / (10 ** TOKEN_DECIMALS)
 
-async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
-    """
-    Determines whether a token should be processed based on the creator's initial buy amount.
-    """
-    transaction_data = await fetch_transaction_data(signature)
-    if not transaction_data:
-        return False, None
+def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
+    # Explore top-level instructions
+    for ix in txn["transaction"]["message"].get("instructions", []):
+        if ix.get("programId") == PUMP_PROGRAM_ID and isinstance(ix.get("data"), str):
+            try:
+                raw = base64.b64decode(ix["data"])
+            except Exception:
+                continue
+            amt = extract_buy_amount_from_raw(raw)
+            if amt is not None:
+                return amt
 
-    creator_buy_amount = extract_buy_instruction_amount(transaction_data)
-    
-    # FIXED: If no buy instruction found, treat as 0 (creator didn't buy = PERFECT TARGET)
-    if creator_buy_amount is None:
-        creator_buy_amount = 0.0
-
-    # Return True if amount is below or equal to threshold, False otherwise
-    return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
+    # Explore nested instructions
+    for inner in txn["meta"].get("innerInstructions", []):
+        for ix in inner.get("instructions", []):
+            if ix.get("programId") == PUMP_PROGRAM_ID and isinstance(ix.get("data"), str):
+                try:
+                    raw = base64.b64decode(ix["data"])
+                except Exception:
+                    continue
+                amt = extract_buy_amount_from_raw(raw)
+                if amt is not None:
+                    return amt
+    return None
