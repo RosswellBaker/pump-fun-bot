@@ -159,8 +159,8 @@ class LogsListener(BaseTokenListener):
                 # Not a token creation – ignore
                 return None
             
-            should_process, creator_buy_amount = await should_process_token(signature)
-        
+            should_process, creator_buy_amount = should_process_token(logs, signature)
+
             if not should_process:
                 logger.info(f"Filter skipped: {signature} — Buy amount: {creator_buy_amount:.6f}")
                 return None
