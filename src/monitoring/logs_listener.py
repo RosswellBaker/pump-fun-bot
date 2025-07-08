@@ -162,13 +162,10 @@ class LogsListener(BaseTokenListener):
             should_process, creator_buy_amount = await should_process_token(signature)
         
             if not should_process:
-                if creator_buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Creator's buy amount ({creator_buy_amount}) exceeds threshold.")
-                else:
-                    logger.info(f"Transaction {signature} skipped: No valid buy instruction found.")
+                logger.info(f"Filter skipped: {signature} — Buy amount: {creator_buy_amount:.6f}")
                 return None
 
-            logger.info(f"Transaction {signature} passed filter: Creator's buy amount is {creator_buy_amount}.")
+            logger.info(f"Filter passed: {signature} — Buy amount: {creator_buy_amount:.6f}")
 
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
