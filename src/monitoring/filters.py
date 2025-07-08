@@ -74,45 +74,26 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
             
     return None
 
-def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
+def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
     """
-    Extract the Pump.fun buy instruction amount from a known token creation transaction.
-
-    Args:
-        transaction_data: The transaction data dictionary from getTransaction().
-    
-    Returns:
-        The buy amount as a float (token units), or None if not found or malformed.
+    Extracts the buy() instruction amount encoded within innerInstructions of a Pump.fun mint transaction.
     """
-    try:
-        instructions = transaction_data["transaction"]["message"].get("instructions", [])
-
-        for ix in instructions:
+    for entry in txn.get("meta", {}).get("innerInstructions", []):
+        for ix in entry.get("instructions", []):
             if ix.get("programId") != PUMP_PROGRAM_ID:
                 continue
-
-            data_b64 = ix.get("data")
-            if not data_b64:
+            data = ix.get("data")  # always base64
+            if not data:
                 continue
-
             try:
-                raw = base64.b64decode(data_b64)
+                raw = base64.b64decode(data)
             except Exception:
                 continue
-
-            if len(raw) < 16:
+            if len(raw) < 16 or raw[:8] != BUY_DISCRIMINATOR_BYTES:
                 continue
-
-            if raw[:8] != BUY_DISCRIMINATOR_BYTES:
-                continue
-
             amount_raw = struct.unpack("<Q", raw[8:16])[0]
             return amount_raw / (10 ** TOKEN_DECIMALS)
-
-        return None
-
-    except Exception:
-        return None
+    return None
 
 async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
