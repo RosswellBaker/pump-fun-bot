@@ -140,7 +140,7 @@ async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
     transaction_data = await fetch_transaction_data(signature)
     if not transaction_data:
-        return False, None
+        return False, 0.0
 
     creator_buy_amount = extract_buy_instruction_amount(transaction_data)
     
