@@ -2,7 +2,6 @@ from typing import Optional, Tuple, Dict
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
 import base64
-import base58
 import struct
 import os
 import asyncio
@@ -21,8 +20,7 @@ CREATOR_BUY_AMOUNT_THRESHOLD = 50000000  # 50 million tokens
 TOKEN_DECIMALS = 6  # Pump.fun uses 6 decimals
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 
-# FIXED: Use correct discriminator from repository (calculate_discriminator.py)
-BUY_DISCRIMINATOR = 16927863322537952870  # global:buy discriminator
+BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])  # global:buy
 
 # Rate Limiter
 class RateLimiter:
@@ -78,59 +76,41 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
 
 def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
     """
-    Extract the buy instruction amount from transaction data.
-    
+    Extract the Pump.fun buy instruction amount from a known token creation transaction.
+
     Args:
-        transaction_data: The transaction data dictionary fetched from the RPC.
-        
+        transaction_data: The transaction data dictionary from getTransaction().
+    
     Returns:
-        The buy amount as a float (in tokens), or None if not a relevant buy instruction or amount extraction fails.
+        The buy amount as a float (token units), or None if not found or malformed.
     """
     try:
-        instructions_to_check = []
-        
-        # Add main instructions
-        if "instructions" in transaction_data["transaction"]["message"]:
-            instructions_to_check.extend(transaction_data["transaction"]["message"]["instructions"])
-        
-        # Add inner instructions if available
-        if "innerInstructions" in transaction_data["meta"]:
-            for inner_instruction_list in transaction_data["meta"]["innerInstructions"]:
-                instructions_to_check.extend(inner_instruction_list["instructions"])
-                
-        # Check each instruction
-        for instruction in instructions_to_check:
-            program_id = instruction.get("programId")
-            
-            # Only check instructions from the pump.fun program
-            if program_id == PUMP_PROGRAM_ID:
-                if "data" in instruction:
-                    data = instruction["data"]
-                    decoded_data = None
-                    
-                    # Try both base64 and base58 decoding
-                    try:
-                        # Try base64 first (most common in jsonParsed encoding)
-                        decoded_data = base64.b64decode(data)
-                    except:
-                        try:
-                            # Fallback to base58 if base64 fails
-                            decoded_data = base58.b58decode(data)
-                        except:
-                            continue
-                    
-                    # Ensure minimum length for discriminator + amount
-                    if decoded_data and len(decoded_data) >= 16:  # 8 bytes discriminator + 8 bytes amount
-                        # FIXED: Compare discriminator as integer (same as repository)
-                        discriminator = struct.unpack("<Q", decoded_data[:8])[0]
-                        if discriminator == BUY_DISCRIMINATOR:
-                            # Extract amount (next 8 bytes after discriminator) as u64
-                            amount_raw = struct.unpack("<Q", decoded_data[8:16])[0]
-                            # Convert from raw units to token units (6 decimals)
-                            return amount_raw / (10 ** TOKEN_DECIMALS)
-        
+        instructions = transaction_data["transaction"]["message"].get("instructions", [])
+
+        for ix in instructions:
+            if ix.get("programId") != PUMP_PROGRAM_ID:
+                continue
+
+            data_b64 = ix.get("data")
+            if not data_b64:
+                continue
+
+            try:
+                raw = base64.b64decode(data_b64)
+            except Exception:
+                continue
+
+            if len(raw) < 16:
+                continue
+
+            if raw[:8] != BUY_DISCRIMINATOR_BYTES:
+                continue
+
+            amount_raw = struct.unpack("<Q", raw[8:16])[0]
+            return amount_raw / (10 ** TOKEN_DECIMALS)
+
         return None
-        
+
     except Exception:
         return None
 
