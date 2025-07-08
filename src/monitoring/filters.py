@@ -53,25 +53,21 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
         Decoded transaction data if found, otherwise None.
     """
     await rate_limiter.acquire()
-    
+
     for attempt in range(max_retries):
         try:
-            # Critical fix: Add maxSupportedTransactionVersion parameter
             transaction_response = await rpc_client.get_transaction(
                 Signature.from_string(signature),
                 encoding="jsonParsed",
                 commitment="confirmed",
-                maxSupportedTransactionVersion=0  # Required for newer Solana transactions
+                max_supported_transaction_version=0  # ✅ Correct name
             )
-            
             if transaction_response and transaction_response.value:
                 return transaction_response.value
-                
             await asyncio.sleep(retry_delay)
-            
         except Exception:
             await asyncio.sleep(retry_delay)
-            
+
     return None
 
 def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
