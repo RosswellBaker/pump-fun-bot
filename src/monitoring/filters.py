@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
 import base64
@@ -8,17 +8,17 @@ import asyncio
 from collections import deque
 from time import time
 
-# RPC setup
+# RPC config
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
 if not FILTER_RPC_ENDPOINT:
     raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
 
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
-# Pump.fun program constants
+# Constants
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
-BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])
-CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000  # 50 million tokens
+BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])  # global:buy
+CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000  # 50 million
 TOKEN_DECIMALS = 6
 
 # Rate limiter
@@ -39,11 +39,11 @@ class RateLimiter:
 
 rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 
-# Transaction fetch
-async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_delay: float = 0.5) -> Optional[Dict]:
+# Fetch tx from Solana RPC
+async def fetch_transaction_data(signature: str, retries: int = 5, delay: float = 0.5) -> Optional[Dict]:
     await rate_limiter.acquire()
 
-    for _ in range(max_retries):
+    for _ in range(retries):
         try:
             response = await rpc_client.get_transaction(
                 Signature.from_string(signature),
@@ -55,51 +55,47 @@ async def fetch_transaction_data(signature: str, max_retries: int = 5, retry_del
                 return response.value
         except Exception:
             pass
-        await asyncio.sleep(retry_delay)
+        await asyncio.sleep(delay)
 
     return None
 
-# Buy amount extractor
+# Extract buy amount from innerInstructions
 def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
-    """
-    Extracts the buy amount from inner instructions only.
-    """
     try:
-        inner_ix_lists = transaction_data["meta"].get("innerInstructions", [])
-        for ix_block in inner_ix_lists:
-            for ix in ix_block.get("instructions", []):
+        inner_ix = transaction_data.get("meta", {}).get("innerInstructions", [])
+        for item in inner_ix:
+            for ix in item.get("instructions", []):
                 if ix.get("programId") != PUMP_PROGRAM_ID:
                     continue
 
-                encoded = ix.get("data")
-                if not encoded:
+                data_b64 = ix.get("data")
+                if not data_b64:
                     continue
 
                 try:
-                    raw = base64.b64decode(encoded)
+                    raw = base64.b64decode(data_b64)
                 except Exception:
                     continue
 
-                if len(raw) < 16:
+                if len(raw) < 16 or raw[:8] != BUY_DISCRIMINATOR_BYTES:
                     continue
 
-                if raw[:8] == BUY_DISCRIMINATOR_BYTES:
-                    amount_raw = struct.unpack("<Q", raw[8:16])[0]
-                    return amount_raw / (10 ** TOKEN_DECIMALS)
+                amount_raw = struct.unpack("<Q", raw[8:16])[0]
+                return amount_raw / (10 ** TOKEN_DECIMALS)
+
     except Exception:
         pass
 
     return None
 
-# Filter decision
-async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
+# ✅ This function now takes BOTH logs and signature as required
+async def should_process_token(logs: List[str], signature: str) -> Tuple[bool, float]:
     transaction_data = await fetch_transaction_data(signature)
     if not transaction_data:
         return False, 0.0
 
-    creator_buy_amount = extract_buy_instruction_amount(transaction_data)
+    amount = extract_buy_instruction_amount(transaction_data)
+    if amount is None:
+        amount = 0.0
 
-    if creator_buy_amount is None:
-        creator_buy_amount = 0.0
-
-    return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
+    return amount <= CREATOR_BUY_AMOUNT_THRESHOLD, amount
