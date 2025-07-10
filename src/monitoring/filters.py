@@ -46,17 +46,22 @@ def valid_create(logs: List[str]) -> bool:
 
 async def fetch_tx(sig: str) -> Optional[Dict]:
     await lim.acquire()
-    for attempt in range(3):  # Retry up to 3 times
+    for attempt in range(3):
         try:
-            res = await rpc.get_transaction(Signature.from_string(sig),
-                                            encoding="jsonParsed", commitment="confirmed")
+            res = await rpc.get_transaction(
+                Signature.from_string(sig),
+                encoding="jsonParsed",
+                commitment="confirmed",
+                max_supported_transaction_version=0  # Essential fix
+            )
             if res and res.value:
                 js = res.value.to_json()
                 return json.loads(js) if isinstance(js, str) else js
         except Exception as e:
             logger.warning(f"fetch_tx error attempt {attempt+1} for {sig}: {e}")
-        await asyncio.sleep(1.2)  # Wait briefly before next attempt
+        await asyncio.sleep(1.2)
     return None
+
 
 
 def parse_buy_amount(tx: Dict) -> Optional[float]:
