@@ -1,29 +1,25 @@
-# filters.py — FINAL, VERIFIED IMPLEMENTATION
-# Accurate Pump.fun gatekeeper + buy amount filter
-# Requires: Python 3.11+, solders, solana-py
+# filters.py — FINAL VERIFIED for Pump.fun mint detection + dev buy amount filtering
 
 from typing import Optional, Tuple, Dict, List
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
-import base64
-import struct
-import os
-import asyncio
+import base64, struct, os, asyncio
 from collections import deque
 from time import time
 
-# --- ENV + RPC SETUP ---
+# --- CONFIGURATION ---
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
 if not FILTER_RPC_ENDPOINT:
-    raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
+    raise ValueError("FILTER_RPC_ENDPOINT not set")
 
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
-# --- CONSTANTS ---
+# Constants matching Anchor/Pump.fun specs
 CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000
 TOKEN_DECIMALS = 6
 PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
 BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])
+
 CREATE_TAG = "Program log: Instruction: Create"
 SKIP_TAG = "Program log: Instruction: CreateTokenAccount"
 DATA_TAG = "Program data:"
@@ -46,38 +42,34 @@ class RateLimiter:
 
 rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 
-# --- CREATION LOGIC CHECK ---
+# --- VALIDATION FUNCTIONS ---
 def is_valid_pumpfun_create(logs: List[str]) -> bool:
-    if not any(CREATE_TAG in log for log in logs):
-        return False
-    if any(SKIP_TAG in log for log in logs):
-        return False
-    if not any(log.startswith(DATA_TAG) for log in logs):
-        return False
-    return True
+    return (
+        any(CREATE_TAG in log for log in logs)
+        and not any(SKIP_TAG in log for log in logs)
+        and any(log.startswith(DATA_TAG) for log in logs)
+    )
 
-# --- TX FETCH ---
 async def fetch_transaction_data(signature: str) -> Optional[Dict]:
     await rate_limiter.acquire()
     try:
-        response = await rpc_client.get_transaction(
+        res = await rpc_client.get_transaction(
             Signature.from_string(signature),
             encoding="jsonParsed",
             commitment="confirmed",
             max_supported_transaction_version=0
         )
-        return response.value if response and response.value else None
-    except Exception:
+        return res.value.to_json() if res and res.value else None
+    except:
         return None
 
-# --- BUY INSTRUCTION PARSER ---
 def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
     def decode(data_b64: str) -> Optional[float]:
         try:
             raw = base64.b64decode(data_b64)
             if raw[:8] == BUY_DISCRIMINATOR_BYTES:
                 return struct.unpack("<Q", raw[8:16])[0] / (10 ** TOKEN_DECIMALS)
-        except Exception:
+        except:
             pass
         return None
 
@@ -96,7 +88,7 @@ def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
 
     return None
 
-# --- MAIN FILTER ENTRY POINT ---
+# --- MAIN ENTRY POINT ---
 async def should_process_token(signature: str, logs: List[str]) -> Tuple[bool, Optional[float]]:
     if not is_valid_pumpfun_create(logs):
         return False, None
