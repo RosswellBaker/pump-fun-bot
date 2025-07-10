@@ -163,10 +163,13 @@ class LogsListener(BaseTokenListener):
 
 
             if not should_process:
-                logger.info(f"Filter skipped: {signature} — Buy amount: {creator_buy_amount:.6f}")
+                if creator_buy_amount is not None:
+                    logger.info(f"Transaction {signature} skipped: Buy amount = {creator_buy_amount:.6f}")
+                else:
+                    logger.info(f"Transaction {signature} skipped: No valid buy instruction")
                 return None
 
-            logger.info(f"Filter passed: {signature} — Buy amount: {creator_buy_amount:.6f}")
+            logger.info(f"Transaction {signature} passed filter: Buy amount = {creator_buy_amount:.6f}")
 
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
