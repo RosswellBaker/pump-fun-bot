@@ -1,7 +1,7 @@
 from typing import Optional, Tuple, List, Dict
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
-import base64, struct, os, asyncio, json
+import base64, struct, os, asyncio, json, aiohttp
 from collections import deque
 from time import time
 import logging
@@ -46,56 +46,62 @@ def valid_create(logs: List[str]) -> bool:
 
 async def fetch_tx(sig: str) -> Optional[Dict]:
     await lim.acquire()
-    for attempt in range(3):
-        try:
-            res = await rpc.get_transaction(
-                Signature.from_string(sig),
-                encoding="jsonParsed",
-                commitment="confirmed",
-                max_supported_transaction_version=0  # Essential fix
-            )
-            if res and res.value:
-                js = res.value.to_json()
-                return json.loads(js) if isinstance(js, str) else js
-        except Exception as e:
-            logger.warning(f"fetch_tx error attempt {attempt+1} for {sig}: {e}")
-        await asyncio.sleep(1.2)
-    return None
-
-
+    try:
+        headers = {"Content-Type": "application/json"}
+        body = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTransaction",
+            "params": [
+                sig,
+                {
+                    "encoding": "jsonParsed",
+                    "maxSupportedTransactionVersion": 0,
+                    "commitment": "confirmed"
+                }
+            ]
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(FILTER_RPC_ENDPOINT, headers=headers, json=body) as resp:
+                js = await resp.json()
+                return js.get("result", None)
+    except Exception as e:
+        logger.error(f"fetch_tx error for {sig}: {e}")
+        return None
 
 def parse_buy_amount(tx: Dict) -> Optional[float]:
     def decode(b64: str) -> Optional[float]:
         try:
-            # Fix padding
-            b64 += '=' * (-len(b64) % 4)
+            b64 = b64 + '=' * (-len(b64) % 4)
             raw = base64.b64decode(b64, validate=True)
-            if len(raw) < 16 or raw[:8] != BUY_DISC:
+            if raw[:8] != BUY_DISC:
                 return None
             val = struct.unpack("<Q", raw[8:16])[0]
             return val / (10 ** DECIMALS)
-        except Exception:
-            return None
+        except Exception as e:
+            logger.error(f"decode error: {e}")
+        return None
 
-    # First check inner instructions
-    inner = tx.get("meta", {}).get("innerInstructions", [])
-    for entry in inner:
+    for entry in tx.get("meta", {}).get("innerInstructions", []):
         for ix in entry.get("instructions", []):
             if ix.get("programId") == PROGRAM_ID:
-                amt = decode(ix.get("data", ""))
+                b64 = ix.get("data", "")
+                if len(b64) % 4 != 0:
+                    continue
+                amt = decode(b64)
                 if amt is not None:
                     return amt
 
-    # Fallback to top-level instructions
-    outer = tx.get("transaction", {}).get("message", {}).get("instructions", [])
-    for ix in outer:
+    for ix in tx.get("transaction", {}).get("message", {}).get("instructions", []):
         if ix.get("programId") == PROGRAM_ID:
-            amt = decode(ix.get("data", ""))
+            b64 = ix.get("data", "")
+            if len(b64) % 4 != 0:
+                continue
+            amt = decode(b64)
             if amt is not None:
                 return amt
 
     return None
-
 
 async def should_process_token(signature: str, logs: List[str]) -> Tuple[bool, Optional[float]]:
     if not valid_create(logs):
