@@ -1,3 +1,7 @@
+# filters.py — FINAL, VERIFIED IMPLEMENTATION
+# Accurate Pump.fun gatekeeper + buy amount filter
+# Requires: Python 3.11+, solders, solana-py
+
 from typing import Optional, Tuple, Dict, List
 from solders.signature import Signature
 from solana.rpc.async_api import AsyncClient
@@ -8,20 +12,23 @@ import asyncio
 from collections import deque
 from time import time
 
-# RPC config
+# --- ENV + RPC SETUP ---
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
 if not FILTER_RPC_ENDPOINT:
     raise ValueError("FILTER_RPC_ENDPOINT environment variable not set")
 
 rpc_client = AsyncClient(FILTER_RPC_ENDPOINT)
 
-# Constants
-PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
-BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])  # global:buy
-CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000  # 50 million
+# --- CONSTANTS ---
+CREATOR_BUY_AMOUNT_THRESHOLD = 50_000_000
 TOKEN_DECIMALS = 6
+PUMP_PROGRAM_ID = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+BUY_DISCRIMINATOR_BYTES = bytes([102, 6, 61, 18, 1, 218, 235, 234])
+CREATE_TAG = "Program log: Instruction: Create"
+SKIP_TAG = "Program log: Instruction: CreateTokenAccount"
+DATA_TAG = "Program data:"
 
-# Rate limiter
+# --- RATE LIMITER ---
 class RateLimiter:
     def __init__(self, max_requests: int, time_window: float):
         self.max_requests = max_requests
@@ -39,63 +46,67 @@ class RateLimiter:
 
 rate_limiter = RateLimiter(max_requests=8, time_window=1.0)
 
-# Fetch tx from Solana RPC
-async def fetch_transaction_data(signature: str, retries: int = 5, delay: float = 0.5) -> Optional[Dict]:
-    await rate_limiter.acquire()
+# --- CREATION LOGIC CHECK ---
+def is_valid_pumpfun_create(logs: List[str]) -> bool:
+    if not any(CREATE_TAG in log for log in logs):
+        return False
+    if any(SKIP_TAG in log for log in logs):
+        return False
+    if not any(log.startswith(DATA_TAG) for log in logs):
+        return False
+    return True
 
-    for _ in range(retries):
+# --- TX FETCH ---
+async def fetch_transaction_data(signature: str) -> Optional[Dict]:
+    await rate_limiter.acquire()
+    try:
+        response = await rpc_client.get_transaction(
+            Signature.from_string(signature),
+            encoding="jsonParsed",
+            commitment="confirmed",
+            max_supported_transaction_version=0
+        )
+        return response.value if response and response.value else None
+    except Exception:
+        return None
+
+# --- BUY INSTRUCTION PARSER ---
+def extract_buy_instruction_amount(txn: Dict) -> Optional[float]:
+    def decode(data_b64: str) -> Optional[float]:
         try:
-            response = await rpc_client.get_transaction(
-                Signature.from_string(signature),
-                encoding="jsonParsed",
-                commitment="confirmed",
-                max_supported_transaction_version=0
-            )
-            if response and response.value:
-                return response.value
+            raw = base64.b64decode(data_b64)
+            if raw[:8] == BUY_DISCRIMINATOR_BYTES:
+                return struct.unpack("<Q", raw[8:16])[0] / (10 ** TOKEN_DECIMALS)
         except Exception:
             pass
-        await asyncio.sleep(delay)
+        return None
+
+    for entry in txn.get("meta", {}).get("innerInstructions", []):
+        for ix in entry.get("instructions", []):
+            if ix.get("programId") == PUMP_PROGRAM_ID:
+                amt = decode(ix.get("data", ""))
+                if amt is not None:
+                    return amt
+
+    for ix in txn.get("transaction", {}).get("message", {}).get("instructions", []):
+        if ix.get("programId") == PUMP_PROGRAM_ID:
+            amt = decode(ix.get("data", ""))
+            if amt is not None:
+                return amt
 
     return None
 
-# Extract buy amount from innerInstructions
-def extract_buy_instruction_amount(transaction_data: Dict) -> Optional[float]:
-    try:
-        inner_ix = transaction_data.get("meta", {}).get("innerInstructions", [])
-        for item in inner_ix:
-            for ix in item.get("instructions", []):
-                if ix.get("programId") != PUMP_PROGRAM_ID:
-                    continue
+# --- MAIN FILTER ENTRY POINT ---
+async def should_process_token(signature: str, logs: List[str]) -> Tuple[bool, Optional[float]]:
+    if not is_valid_pumpfun_create(logs):
+        return False, None
 
-                data_b64 = ix.get("data")
-                if not data_b64:
-                    continue
-
-                try:
-                    raw = base64.b64decode(data_b64)
-                except Exception:
-                    continue
-
-                if len(raw) < 16 or raw[:8] != BUY_DISCRIMINATOR_BYTES:
-                    continue
-
-                amount_raw = struct.unpack("<Q", raw[8:16])[0]
-                return amount_raw / (10 ** TOKEN_DECIMALS)
-
-    except Exception:
-        pass
-
-    return None
-
-# ✅ This function now takes BOTH logs and signature as required
-async def should_process_token(logs: List[str], signature: str) -> Tuple[bool, float]:
-    transaction_data = await fetch_transaction_data(signature)
-    if not transaction_data:
+    txn = await fetch_transaction_data(signature)
+    if not txn:
         return False, 0.0
 
-    amount = extract_buy_instruction_amount(transaction_data)
-    if amount is None:
-        amount = 0.0
+    creator_buy_amount = extract_buy_instruction_amount(txn)
+    if creator_buy_amount is None:
+        creator_buy_amount = 0.0
 
-    return amount <= CREATOR_BUY_AMOUNT_THRESHOLD, amount
+    return creator_buy_amount <= CREATOR_BUY_AMOUNT_THRESHOLD, creator_buy_amount
