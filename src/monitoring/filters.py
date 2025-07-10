@@ -4,6 +4,9 @@ from solana.rpc.async_api import AsyncClient
 import base64, struct, os, asyncio, json
 from collections import deque
 from time import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Setup
 FILTER_RPC_ENDPOINT = os.getenv("FILTER_RPC_ENDPOINT")
@@ -51,18 +54,19 @@ async def fetch_tx(sig: str) -> Optional[Dict]:
             js = res.value.to_json()
             return json.loads(js) if isinstance(js, str) else js
     except Exception as e:
-        print(f"[ERROR] fetch_tx: {e}")
+        logger.error(f"fetch_tx error for {sig}: {e}")
     return None
 
 def parse_buy_amount(tx: Dict) -> Optional[float]:
     def decode(b64: str) -> Optional[float]:
         try:
+            b64 = b64 + '=' * (-len(b64) % 4)  # fix padding
             raw = base64.b64decode(b64)
             if raw[:8] == BUY_DISC:
                 val = struct.unpack("<Q", raw[8:16])[0]
                 return val / (10 ** DECIMALS)
         except Exception as e:
-            print(f"[ERROR] decode: {e}")
+            logger.error(f"decode error: {e}")
         return None
 
     for entry in tx.get("meta", {}).get("innerInstructions", []):
@@ -88,5 +92,7 @@ async def should_process_token(signature: str, logs: List[str]) -> Tuple[bool, O
         return False, 0.0
     amt = parse_buy_amount(tx)
     if amt is None:
-        amt = 0.0
+        logger.warning(f"Transaction {signature} had no buy amount")
+        return False, 0.0
+    logger.info(f"Transaction {signature} passed filter: Buy amount = {amt:.6f}")
     return amt <= THRESHOLD, amt
