@@ -67,29 +67,35 @@ async def fetch_tx(sig: str) -> Optional[Dict]:
 def parse_buy_amount(tx: Dict) -> Optional[float]:
     def decode(b64: str) -> Optional[float]:
         try:
-            b64 = b64 + '=' * (-len(b64) % 4)  # fix padding
-            raw = base64.b64decode(b64)
-            if raw[:8] == BUY_DISC:
-                val = struct.unpack("<Q", raw[8:16])[0]
-                return val / (10 ** DECIMALS)
-        except Exception as e:
-            logger.error(f"decode error: {e}")
-        return None
+            # Fix padding
+            b64 += '=' * (-len(b64) % 4)
+            raw = base64.b64decode(b64, validate=True)
+            if len(raw) < 16 or raw[:8] != BUY_DISC:
+                return None
+            val = struct.unpack("<Q", raw[8:16])[0]
+            return val / (10 ** DECIMALS)
+        except Exception:
+            return None
 
-    for entry in tx.get("meta", {}).get("innerInstructions", []):
+    # First check inner instructions
+    inner = tx.get("meta", {}).get("innerInstructions", [])
+    for entry in inner:
         for ix in entry.get("instructions", []):
             if ix.get("programId") == PROGRAM_ID:
                 amt = decode(ix.get("data", ""))
                 if amt is not None:
                     return amt
 
-    for ix in tx.get("transaction", {}).get("message", {}).get("instructions", []):
+    # Fallback to top-level instructions
+    outer = tx.get("transaction", {}).get("message", {}).get("instructions", [])
+    for ix in outer:
         if ix.get("programId") == PROGRAM_ID:
             amt = decode(ix.get("data", ""))
             if amt is not None:
                 return amt
 
     return None
+
 
 async def should_process_token(signature: str, logs: List[str]) -> Tuple[bool, Optional[float]]:
     if not valid_create(logs):
