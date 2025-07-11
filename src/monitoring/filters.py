@@ -93,7 +93,7 @@ async def should_process_token(signature: str) -> Tuple[bool, Optional[float]]:
     """
     Gatekeeper filter:
       1. Fetch the full transaction for this mint signature.
-      2. Ensure it’s a true mint: logs contain "Instruction: Create"
+      2. Ensure it is a true mint: logs contain "Instruction: Create"
          and do NOT contain "Instruction: CreateTokenAccount".
       3. Extract the buy() amount (always present) and compare to threshold.
       4. Return (True, amount) if ≤ threshold (allow processing),
