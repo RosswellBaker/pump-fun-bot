@@ -159,7 +159,7 @@ class LogsListener(BaseTokenListener):
                 # Not a token creation – ignore
                 return None
             
-            should_process, creator_buy_amount = await should_process_token(signature, logs)
+            should_process, creator_buy_amount = await should_process_token(signature)
 
 
             if not should_process:
