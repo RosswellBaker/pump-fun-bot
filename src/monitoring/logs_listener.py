@@ -154,11 +154,6 @@ class LogsListener(BaseTokenListener):
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
 
-            # Only proceed if this transaction includes a Pump.fun 'Create' instruction
-            if not any("Program log: Instruction: Create" in log for log in logs):
-                # Not a token creation – ignore
-                return None
-            
             should_process, creator_buy_amount = await should_process_token(signature)
 
 
