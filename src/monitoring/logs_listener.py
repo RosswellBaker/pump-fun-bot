@@ -12,7 +12,6 @@ from solders.pubkey import Pubkey
 from monitoring.base_listener import BaseTokenListener
 from monitoring.logs_event_processor import LogsEventProcessor
 from trading.base import TokenInfo
-from monitoring.filters import should_process_token
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -153,18 +152,6 @@ class LogsListener(BaseTokenListener):
             log_data = data["params"]["result"]["value"]
             logs = log_data.get("logs", [])
             signature = log_data.get("signature", "unknown")
-
-            should_process, creator_buy_amount = await should_process_token(signature)
-
-
-            if not should_process:
-                if creator_buy_amount is not None:
-                    logger.info(f"Transaction {signature} skipped: Buy amount = {creator_buy_amount:.6f}")
-                else:
-                    logger.info(f"Transaction {signature} skipped: No valid buy instruction")
-                return None
-
-            logger.info(f"Transaction {signature} passed filter: Buy amount = {creator_buy_amount:.6f}")
 
             # Use the processor to extract token info
             return self.event_processor.process_program_logs(logs, signature)
