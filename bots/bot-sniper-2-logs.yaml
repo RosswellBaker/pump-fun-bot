@@ -20,16 +20,16 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.03 # Amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.3 # Maximum acceptable price deviation (0.3 = 30%)
-  sell_slippage: 0.3 # Maximum acceptable price deviation (0.3 = 30%)
+  sell_slippage: 0.3
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
   take_profit_percentage: 0.22 # Take profit at 22% gain (0.22 = 22%)
-  stop_loss_percentage: 0.10 # Stop loss at 10% loss (0.10 = 10%)
-  max_hold_time: 25 # Maximum hold time in seconds
-  price_check_interval: 0.5 # Check price every 2 seconds
+  stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
+  max_hold_time: 30 # Maximum hold time in seconds
+  price_check_interval: 2 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
@@ -45,7 +45,7 @@ priority_fees:
   enable_fixed: true # Use fixed amount below
   fixed_amount: 200_000 # Base fee in microlamports
   extra_percentage: 0.0 # Percentage increase on riority fee regardless of the calculation method (0.1 = 10%)
-  hard_cap: 300_000 # Maximum allowable fee in microlamports to prevent excessive spending
+  hard_cap: 200_000 # Maximum allowable fee in microlamports to prevent excessive spending
 
 # Filters for token selection
 filters:
@@ -59,9 +59,9 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 1 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
-  wait_after_buy: 3 # Holding period after buy transaction
-  wait_before_new_token: 7 # Pause between token trades
+  wait_after_creation: 15 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_buy: 10 # Holding period after buy transaction
+  wait_before_new_token: 10 # Pause between token trades
 
 # Token and account management
 cleanup:
