@@ -43,9 +43,9 @@ trade:
 priority_fees:
   enable_dynamic: false # Use latest transactions to estimate required fee (getRecentPrioritizationFees)
   enable_fixed: true # Use fixed amount below
-  fixed_amount: 400_000 # Base fee in microlamports
+  fixed_amount: 200_000 # Base fee in microlamports
   extra_percentage: 0.0 # Percentage increase on riority fee regardless of the calculation method (0.1 = 10%)
-  hard_cap: 500_000 # Maximum allowable fee in microlamports to prevent excessive spending
+  hard_cap: 300_000 # Maximum allowable fee in microlamports to prevent excessive spending
 
 # Filters for token selection
 filters:
@@ -59,7 +59,7 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 0 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_creation: 1 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 3 # Holding period after buy transaction
   wait_before_new_token: 7 # Pause between token trades
 
