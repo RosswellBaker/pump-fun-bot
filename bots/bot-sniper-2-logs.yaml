@@ -59,7 +59,7 @@ filters:
 # Retry and timeout settings
 retries:
   max_attempts: 1 # Number of attempts for transaction submission
-  wait_after_creation: 15 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_creation: 3 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 10 # Holding period after buy transaction
   wait_before_new_token: 10 # Pause between token trades
 
