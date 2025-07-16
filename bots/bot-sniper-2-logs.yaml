@@ -20,13 +20,13 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.04 # Amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
   sell_slippage: 0.2 # Maximum acceptable price deviation when selling (0.2 = 20%)
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.22 # Take profit at 22% gain (0.22 = 22%)
+  take_profit_percentage: 0.32 # Take profit at 32% gain (0.32 = 32%)
   stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
   max_hold_time: 60 # Maximum hold time in seconds
   price_check_interval: 2 # Check price every 2 seconds
@@ -34,7 +34,7 @@ trade:
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: false
+  extreme_fast_mode: true
   extreme_fast_token_amount: 2000000 # Amount of tokens to buy
 
 # Priority fee configuration
