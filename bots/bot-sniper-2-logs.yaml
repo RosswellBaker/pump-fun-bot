@@ -26,16 +26,16 @@ trade:
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.32 # Take profit at 32% gain (0.32 = 32%)
+  take_profit_percentage: 0.22 # Take profit at 22% gain (0.22 = 22%)
   stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
   max_hold_time: 60 # Maximum hold time in seconds
-  price_check_interval: 2 # Check price every 2 seconds
+  price_check_interval: 1 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: true
-  extreme_fast_token_amount: 2000000 # Amount of tokens to buy
+  extreme_fast_mode: false
+  extreme_fast_token_amount: 3000000 # Amount of tokens to buy
 
 # Priority fee configuration
 # Manage transaction speed and cost on the Solana network.
