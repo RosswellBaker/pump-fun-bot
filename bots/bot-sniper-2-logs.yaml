@@ -34,7 +34,7 @@ trade:
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: false
+  extreme_fast_mode: true
   extreme_fast_token_amount: 3000000 # Amount of tokens to buy
 
 # Priority fee configuration
