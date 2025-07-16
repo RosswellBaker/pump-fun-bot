@@ -20,22 +20,22 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
-  buy_slippage: 0.15 # Maximum acceptable price deviation (0.15 = 15%)
-  sell_slippage: 0.25 # Maximum acceptable price deviation (0.25 = 25%)
+  buy_amount: 0.03 # Amount of SOL to spend when buying (in SOL)
+  buy_slippage: 0.3 # Maximum acceptable price deviation (0.3 = 30%)
+  sell_slippage: 0.3 # Maximum acceptable price deviation (0.3 = 30%)
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.3 # Take profit at 30% gain (0.3 = 30%)
-  stop_loss_percentage: 0.15 # Stop loss at 15% loss (0.15 = 15%)
-  max_hold_time: 30 # Maximum hold time in seconds
-  price_check_interval: 2 # Check price every 2 seconds
+  take_profit_percentage: 0.22 # Take profit at 22% gain (0.22 = 22%)
+  stop_loss_percentage: 0.10 # Stop loss at 10% loss (0.10 = 10%)
+  max_hold_time: 25 # Maximum hold time in seconds
+  price_check_interval: 0.5 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: false
-  extreme_fast_token_amount: 20 # Amount of tokens to buy
+  extreme_fast_mode: true
+  extreme_fast_token_amount: 2000000 # Amount of tokens to buy
 
 # Priority fee configuration
 # Manage transaction speed and cost on the Solana network.
@@ -52,16 +52,16 @@ filters:
   match_string: null # Only process tokens with this string in name/symbol
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
-  max_token_age: 0.4 # Maximum token age in seconds for processing
+  max_token_age: 0.001 # Maximum token age in seconds for processing
   marry_mode: false # Only buy tokens, skip selling
   yolo_mode: true # Continuously trade tokens
 
 # Retry and timeout settings
 retries:
-  max_attempts: 3 # Number of attempts for transaction submission
-  wait_after_creation: 10 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
-  wait_after_buy: 30 # Holding period after buy transaction
-  wait_before_new_token: 15 # Pause between token trades
+  max_attempts: 1 # Number of attempts for transaction submission
+  wait_after_creation: 0 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
+  wait_after_buy: 3 # Holding period after buy transaction
+  wait_before_new_token: 7 # Pause between token trades
 
 # Token and account management
 cleanup:
