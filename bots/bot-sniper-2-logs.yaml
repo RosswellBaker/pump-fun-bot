@@ -76,4 +76,4 @@ cleanup:
 
 # Node provider configuration (not implemented)
 node:
-  max_rps: 10 # Maximum requests per second
+  max_rps: 15 # Maximum requests per second
