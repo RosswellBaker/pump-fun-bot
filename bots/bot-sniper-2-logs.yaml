@@ -20,7 +20,7 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.05 # Amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.04 # Amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
   sell_slippage: 0.2 # Maximum acceptable price deviation when selling (0.2 = 20%)
 
