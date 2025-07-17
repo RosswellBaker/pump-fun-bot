@@ -70,7 +70,7 @@ cleanup:
   # "on_fail": only clean up if a buy transaction fails.
   # "after_sell": clean up after selling.
   # "post_session": clean up all empty accounts after a trading session ends.
-  mode: "post_session"
+  mode: "disabled"
   force_close_with_burn: false # Force burning remaining tokens before closing account
   with_priority_fee: false # Use priority fees for cleanup transactions
 
