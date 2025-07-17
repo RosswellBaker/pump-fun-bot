@@ -1,9 +1,9 @@
 """
-Monitors Solana for new Pump AMM markets via WebSocket.
-Fetches existing markets to filter out already existing ones, parses market account data (e.g., mints, token accounts, creator),
-and excludes user-created markets. May also detect non-migration-based markets (if they created by a program).
+Listens for new Pump.fun token creations via Solana WebSocket.
+Monitors logs for 'Create' instructions, decodes and prints token details (name, symbol, mint, etc.).
+Additionally, calculates an associated bonding curve address for each token.
 
-Note: this method consumes HUGE AMOUNT OF MESSAGES from a WebSocket.
+It is usually faster than blockSubscribe, but slower than Geyser.
 """
 
 import asyncio
@@ -12,7 +12,6 @@ import json
 import os
 import struct
 
-import aiohttp
 import base58
 import websockets
 from dotenv import load_dotenv
@@ -21,150 +20,147 @@ from solders.pubkey import Pubkey
 load_dotenv()
 
 WSS_ENDPOINT = os.environ.get("SOLANA_NODE_WSS_ENDPOINT")
-RPC_ENDPOINT = os.environ.get("SOLANA_NODE_RPC_ENDPOINT")
-PUMP_AMM_PROGRAM_ID = Pubkey.from_string("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA")
+PUMP_PROGRAM_ID = Pubkey.from_string("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+TOKEN_PROGRAM_ID = Pubkey.from_string("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+ASSOCIATED_TOKEN_PROGRAM_ID = Pubkey.from_string("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")
 
-MARKET_ACCOUNT_LENGTH = 8 + 1 + 2 + 32 * 6 + 8  # total size of known market structure
-MARKET_DISCRIMINATOR = base58.b58encode(b'\xf1\x9am\x04\x11\xb1m\xbc').decode()
-QUOTE_MINT_SOL = base58.b58encode(bytes(Pubkey.from_string("So11111111111111111111111111111111111111112"))).decode()  
-
-
-async def fetch_existing_market_pubkeys():
-    headers = {"Content-Type": "application/json"}
-    body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getProgramAccounts",
-        "params": [
-            str(PUMP_AMM_PROGRAM_ID),
-            {
-                "encoding": "base64",
-                "commitment": "processed",
-                "filters": [
-                    {"dataSize": MARKET_ACCOUNT_LENGTH},
-                    {"memcmp": {"offset": 0, "bytes": MARKET_DISCRIMINATOR}},
-                    {"memcmp": {"offset": 75, "bytes": QUOTE_MINT_SOL}}
-                ]
-            }
-        ]
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.post(RPC_ENDPOINT, headers=headers, json=body) as resp:
-            res = await resp.json()
-            return {account["pubkey"] for account in res.get("result", [])}
+def find_associated_bonding_curve(mint: Pubkey, bonding_curve: Pubkey) -> Pubkey:
+    """
+    Find the associated bonding curve for a given mint and bonding curve.
+    This uses the standard ATA derivation.
+    """
+    derived_address, _ = Pubkey.find_program_address(
+        [
+            bytes(bonding_curve),
+            bytes(TOKEN_PROGRAM_ID),
+            bytes(mint),
+        ],
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+    )
+    return derived_address
 
 
-def parse_market_account_data(data):
+def parse_create_instruction(data):
+    if len(data) < 8:
+        return None
+    offset = 8
     parsed_data = {}
-    offset = 8  # Discriminator
 
+    # Parse fields based on CreateEvent structure
     fields = [
-        ("pool_bump", "u8"),
-        ("index", "u16"),
-        ("creator", "pubkey"),
-        ("base_mint", "pubkey"),
-        ("quote_mint", "pubkey"),
-        ("lp_mint", "pubkey"),
-        ("pool_base_token_account", "pubkey"),
-        ("pool_quote_token_account", "pubkey"),
-        ("lp_supply", "u64"),
-        ("coin_creator", "pubkey")
+        ("name", "string"),
+        ("symbol", "string"),
+        ("uri", "string"),
+        ("mint", "publicKey"),
+        ("bondingCurve", "publicKey"),
+        ("user", "publicKey"),
+        ("creator", "publicKey"),
     ]
 
     try:
         for field_name, field_type in fields:
-            if field_type == "pubkey":
-                value = data[offset:offset + 32]
-                parsed_data[field_name] = base58.b58encode(value).decode("utf-8")
+            if field_type == "string":
+                length = struct.unpack("<I", data[offset : offset + 4])[0]
+                offset += 4
+                value = data[offset : offset + length].decode("utf-8")
+                offset += length
+            elif field_type == "publicKey":
+                value = base58.b58encode(data[offset : offset + 32]).decode("utf-8")
                 offset += 32
-            elif field_type in {"u64", "i64"}:
-                value = struct.unpack("<Q", data[offset:offset + 8])[0] if field_type == "u64" else struct.unpack("<q", data[offset:offset + 8])[0]
-                parsed_data[field_name] = value
-                offset += 8
-            elif field_type == "u16":
-                value = struct.unpack("<H", data[offset:offset + 2])[0]
-                parsed_data[field_name] = value
-                offset += 2
-            elif field_type == "u8":
-                value = data[offset]
-                parsed_data[field_name] = value
-                offset += 1
-    except Exception as e:
-        print(f"[ERROR] Failed to parse market data: {e}")
 
-    return parsed_data
+            parsed_data[field_name] = value
+
+        return parsed_data
+    except:
+        return None
 
 
-async def listen_new_markets():
-    known_pubkeys = await fetch_existing_market_pubkeys()
-    print(f"[INFO] Loaded {len(known_pubkeys)} existing markets")
-
+async def listen_for_new_tokens():
     while True:
         try:
-            print("[INFO] Connecting to WebSocket...")
-            async with websockets.connect(WSS_ENDPOINT) as ws:
-                sub_msg = json.dumps({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "programSubscribe",
-                    "params": [
-                        str(PUMP_AMM_PROGRAM_ID),
-                        {
-                            "commitment": "processed",
-                            "encoding": "base64",
-                            "filters": [
-                                {"dataSize": MARKET_ACCOUNT_LENGTH},
-                                {"memcmp": {"offset": 0, "bytes": MARKET_DISCRIMINATOR}},
-                                {"memcmp": {"offset": 75, "bytes": QUOTE_MINT_SOL}}
-                            ]
-                        }
-                    ]
-                })
-                await ws.send(sub_msg)
-                print(f"[INFO] Subscribed to: {PUMP_AMM_PROGRAM_ID}")
+            async with websockets.connect(WSS_ENDPOINT) as websocket:
+                subscription_message = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "logsSubscribe",
+                        "params": [
+                            {"mentions": [str(PUMP_PROGRAM_ID)]},
+                            {"commitment": "processed"},
+                        ],
+                    }
+                )
+                await websocket.send(subscription_message)
+                print(
+                    f"Listening for new token creations from program: {PUMP_PROGRAM_ID}"
+                )
+
+                # Wait for subscription confirmation
+                response = await websocket.recv()
+                print(f"Subscription response: {response}")
 
                 while True:
-                    msg = await ws.recv()
-                    data = json.loads(msg)
+                    try:
+                        response = await websocket.recv()
+                        data = json.loads(response)
 
-                    if "method" in data and data["method"] == "programNotification":
-                        message_value = data["params"]["result"]["value"]
-                        pubkey = message_value["pubkey"]
-                        raw_account_data = message_value["account"].get("data", [None])[0]
-                        slot = data["params"]["result"]["context"]["slot"]
+                        if "method" in data and data["method"] == "logsNotification":
+                            log_data = data["params"]["result"]["value"]
+                            logs = log_data.get("logs", [])
 
-                        if pubkey in known_pubkeys:
-                            #print("[INFO] Skipping already existed market...")
-                            continue
+                            if any(
+                                "Program log: Instruction: Create" in log
+                                for log in logs
+                            ):
+                                for log in logs:
+                                    if "Program data:" in log:
+                                        try:
+                                            encoded_data = log.split(": ")[1]
+                                            decoded_data = base64.b64decode(
+                                                encoded_data
+                                            )
+                                            parsed_data = parse_create_instruction(
+                                                decoded_data
+                                            )
+                                            if parsed_data and "name" in parsed_data:
+                                                print(
+                                                    "Signature:",
+                                                    log_data.get("signature"),
+                                                )
+                                                for key, value in parsed_data.items():
+                                                    print(f"{key}: {value}")
 
-                        if not raw_account_data:
-                            print("[ERROR] Account data is empty")
-                            continue
+                                                # Calculate associated bonding curve
+                                                mint = Pubkey.from_string(
+                                                    parsed_data["mint"]
+                                                )
+                                                bonding_curve = Pubkey.from_string(
+                                                    parsed_data["bondingCurve"]
+                                                )
+                                                associated_curve = (
+                                                    find_associated_bonding_curve(
+                                                        mint, bonding_curve
+                                                    )
+                                                )
+                                                print(
+                                                    f"Associated Bonding Curve: {associated_curve}"
+                                                )
+                                                print(
+                                                    "##########################################################################################"
+                                                )
+                                        except Exception as e:
+                                            print(f"Failed to decode: {log}")
+                                            print(f"Error: {e!s}")
 
-                        try:
-                            account_data = base64.b64decode(raw_account_data)
-                            parsed = parse_market_account_data(account_data)
-
-                            if Pubkey.from_string(parsed.get("creator", "")).is_on_curve():
-                                print("[INFO] Skipping user-created market...")
-                                continue  # skip user-created pool
-
-                            print("\n[INFO] New market account detected:")
-                            print(f"  pubkey: {pubkey}")
-                            print(f"  slot: {slot}")
-                            for k, v in parsed.items():
-                                print(f"  {k}: {v}")
-
-                            known_pubkeys.add(pubkey)
-                        except Exception as e:
-                            print(f"[ERROR] Failed to decode account: {e}")
+                    except Exception as e:
+                        print(f"An error occurred while processing message: {e}")
+                        break
 
         except Exception as e:
-            print(f"[ERROR] Connection error: {e}")
-            print("[INFO] Reconnecting in 5 seconds...")
+            print(f"Connection error: {e}")
+            print("Reconnecting in 5 seconds...")
             await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    asyncio.run(listen_new_markets())
+    asyncio.run(listen_for_new_tokens())
