@@ -28,13 +28,13 @@ trade:
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
   take_profit_percentage: 0.18 # Take profit at 18% gain (0.18 = 18%)
   stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
-  max_hold_time: 39 # Maximum hold time in seconds
+  max_hold_time: 14 # Maximum hold time in seconds
   price_check_interval: 2 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: false
+  extreme_fast_mode: true
   extreme_fast_token_amount: 1500000 # Amount of tokens to buy
 
 # Priority fee configuration
@@ -58,7 +58,7 @@ filters:
 
 # Retry and timeout settings
 retries:
-  max_attempts: 1 # Number of attempts for transaction submission
+  max_attempts: 2 # Number of attempts for transaction submission
   wait_after_creation: 3 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 7 # Holding period after buy transaction
   wait_before_new_token: 10 # Pause between token trades
