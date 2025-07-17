@@ -26,9 +26,9 @@ trade:
 
   # Exit strategy configuration
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
-  take_profit_percentage: 0.22 # Take profit at 22% gain (0.22 = 22%)
+  take_profit_percentage: 0.18 # Take profit at 18% gain (0.18 = 18%)
   stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
-  max_hold_time: 32 # Maximum hold time in seconds
+  max_hold_time: 39 # Maximum hold time in seconds
   price_check_interval: 2 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
