@@ -20,7 +20,7 @@ geyser:
 # Trading parameters
 # Control trade execution: amount of SOL per trade and acceptable price deviation
 trade:
-  buy_amount: 0.04 # Amount of SOL to spend when buying (in SOL)
+  buy_amount: 0.01 # Amount of SOL to spend when buying (in SOL)
   buy_slippage: 0.2 # Maximum acceptable price deviation (0.2 = 20%)
   sell_slippage: 0.2 # Maximum acceptable price deviation when selling (0.2 = 20%)
 
@@ -28,14 +28,14 @@ trade:
   exit_strategy: "tp_sl" # Options: "time_based", "tp_sl", "manual"
   take_profit_percentage: 0.18 # Take profit at 18% gain (0.18 = 18%)
   stop_loss_percentage: 0.1 # Stop loss at 10% loss (0.1 = 10%)
-  max_hold_time: 14 # Maximum hold time in seconds
+  max_hold_time: 18 # Maximum hold time in seconds
   price_check_interval: 2 # Check price every 2 seconds
 
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
   extreme_fast_mode: true
-  extreme_fast_token_amount: 1200000 # Amount of tokens to buy
+  extreme_fast_token_amount: 300000 # Amount of tokens to buy
 
 # Priority fee configuration
 # Manage transaction speed and cost on the Solana network.
@@ -53,7 +53,7 @@ filters:
   bro_address: null # Only trade tokens created by this user address
   listener_type: "logs" # Method for detecting new tokens: "logs", "blocks", or "geyser"
   max_token_age: 0.001 # Maximum token age in seconds for processing
-  marry_mode: false # Only buy tokens, skip selling
+  marry_mode: true # Only buy tokens, skip selling
   yolo_mode: false # Continuously trade tokens
 
 # Retry and timeout settings
