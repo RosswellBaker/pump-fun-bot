@@ -34,7 +34,7 @@ trade:
   # EXTREME FAST mode configuration
   # When enabled, skips waiting for the bonding curve to stabilize and RPC price check.
   # The bot buys the specified number of tokens directly, making the process faster but less precise.
-  extreme_fast_mode: true
+  extreme_fast_mode: false
   extreme_fast_token_amount: 1500000 # Amount of tokens to buy
 
 # Priority fee configuration
@@ -58,7 +58,7 @@ filters:
 
 # Retry and timeout settings
 retries:
-  max_attempts: 2 # Number of attempts for transaction submission
+  max_attempts: 1 # Number of attempts for transaction submission
   wait_after_creation: 5 # Seconds to wait after token creation (only if EXTREME FAST is disabled)
   wait_after_buy: 5 # Holding period after buy transaction
   wait_before_new_token: 10 # Pause between token trades
